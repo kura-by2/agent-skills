@@ -3,6 +3,7 @@ name: memorizer
 description: >
   コンテキスト管理スキル。作業コンテキストをトピック別ファイルに保存・ロード・一覧表示する。
   `/memorizer new <topic>` で空トピック作成、`/memorizer save [topic]` で保存、
+  `/memorizer handoff <parent> <child>` で次フェーズ用トピックを作成、
   `/memorizer load <topic...>` でロード、`/memorizer list` で一覧、`/memorizer compact` で類似トピック統合、
   `/memorizer archive [days]` で未参照トピックをアーカイブに退避。
 ---
@@ -33,6 +34,7 @@ topic: {topic}
 updated: {date}
 depends_on:       # 省略可。ロード時に依存先も読まれる
   - {topic-a}
+parent: {topic}   # 省略可。フェーズ引き継ぎ元。ロード時はパス提示のみ
 ---
 
 ## 現在の状態      # 1〜3行。index の summary はここの最初の非空行
@@ -73,11 +75,20 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
    bash {BASE_DIR}/scripts/append-log.sh <topic> <text_tmp>
    ```
 
+### `/memorizer handoff <parent-topic> <child-topic>`
+1. 既存の `parent-topic` から次フェーズ用の `child-topic` を新規作成する。
+   ```bash
+   bash {BASE_DIR}/scripts/handoff-context.sh <parent-topic> <child-topic>
+   ```
+2. 子トピック本文には、親の `## 決定事項` と `## 次のアクション` をスナップショットとして写す。子が単体で継続できるようにし、親へのライブ参照には依存しない。
+3. 子トピックのフロントマターには `parent: <parent-topic>` を付ける。`parent:` は lazy なポインタで、親トピックの場所を示すだけ。親の退避はしない。
+
 ### `/memorizer load <topic...>`
 ```bash
 bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
-出力された各パスを依存順に Read する。`MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
+出力された各パスを依存順に Read する。`PARENT:<topic>:<path>` は `topic` の親トピックのパス提示のみで、Read しない。親を読むのはユーザーが明示的に `/memorizer load <parent-topic>` を指示したときだけ。
+`MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。
 

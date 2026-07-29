@@ -52,4 +52,8 @@ for t in "${order[@]}"; do
     perl -pi -e 'if (!$done && /^---$/) { $_ .= "last_loaded: '"$today"'\n"; $done = 1 }' "$f"
   fi
   echo "$f"
+  parent=$(awk -F': *' '/^parent:/{print $2; exit}' "$f")
+  if [ -n "${parent:-}" ]; then
+    echo "PARENT:$t:$DIR/$parent.md"
+  fi
 done
