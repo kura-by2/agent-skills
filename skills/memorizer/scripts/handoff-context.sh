@@ -38,7 +38,7 @@ awk '
 ' parent="$parent" "$parent_file" > "$tmp"
 
 {
-  printf -- '---\ntopic: %s\nupdated: %s\nlast_loaded: %s\nparent: %s\n---\n\n' "$child" "$today" "$today" "$parent"
+  printf -- '---\ntopic: %s\nupdated: %s\nlast_loaded: %s\ndepends_on:\n  - %s\n---\n\n' "$child" "$today" "$today" "$parent"
   cat "$tmp"
 } > "$child_file"
 rm -f "$tmp"

@@ -32,9 +32,8 @@ LLM が内容を埋めるセクション。各セクション最大5項目。
 ---
 topic: {topic}
 updated: {date}
-depends_on:       # 省略可。ロード時に依存先も読まれる
+depends_on:       # 省略可。ロード時は依存先のパス提示のみ
   - {topic-a}
-parent: {topic}   # 省略可。フェーズ引き継ぎ元。ロード時はパス提示のみ
 ---
 
 ## 現在の状態      # 1〜3行。index の summary はここの最初の非空行
@@ -81,13 +80,13 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
    bash {BASE_DIR}/scripts/handoff-context.sh <parent-topic> <child-topic>
    ```
 2. 子トピック本文には、親の `## 決定事項` と `## 次のアクション` をスナップショットとして写す。子が単体で継続できるようにし、親へのライブ参照には依存しない。
-3. 子トピックのフロントマターには `parent: <parent-topic>` を付ける。`parent:` は lazy なポインタで、親トピックの場所を示すだけ。親の退避はしない。
+3. 子トピックのフロントマターには `depends_on:` で `<parent-topic>` を付ける。`depends_on:` は lazy なポインタで、依存先トピックの場所を示すだけ。依存先の退避はしない。
 
 ### `/memorizer load <topic...>`
 ```bash
 bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
-出力された各パスを依存順に Read する。`PARENT:<topic>:<path>` は `topic` の親トピックのパス提示のみで、Read しない。親を読むのはユーザーが明示的に `/memorizer load <parent-topic>` を指示したときだけ。
+出力された通常のパスを Read する。`DEPENDS_ON:<topic>:<path>` は `topic` の依存先トピックのパス提示のみで、Read しない。依存先を読むのはユーザーが明示的に `/memorizer load <dependency-topic>` を指示したときだけ。
 `MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。

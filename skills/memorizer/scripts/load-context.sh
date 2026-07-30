@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: load-context.sh <topic...>
-# 指定トピックと depends_on を再帰解決し、存在するものを last_loaded 更新して
-# 読むべき .md のパスを依存順（依存先 → 依存元）に出力する。
+# 指定トピックの存在するものを last_loaded 更新して読むべき .md のパスを出力する。
+# depends_on は自動ロードせず、依存先のパスだけを DEPENDS_ON:<topic>:<path> で提示する。
 # 見つからないトピックは MISSING:<topic> を出力する。
 set -euo pipefail
 
@@ -11,7 +11,7 @@ today=$(date +%F)
 seen=" "
 order=()
 
-resolve() {
+queue() {
   local t="$1"
   case "$seen" in *" $t "*) return ;; esac
   seen="$seen$t "
@@ -20,19 +20,11 @@ resolve() {
     echo "MISSING:$t"
     return
   fi
-  local dep
-  for dep in $(awk '
-    /^depends_on:/{f=1;next}
-    f && /^[^[:space:]-]/{f=0}
-    f && /^[[:space:]]*-[[:space:]]/{sub(/^[[:space:]]*-[[:space:]]*/,"");print}
-  ' "$f"); do
-    resolve "$dep"
-  done
   order+=("$t")
 }
 
 for t in "$@"; do
-  resolve "$t"
+  queue "$t"
 done
 
 for t in "${order[@]}"; do
@@ -52,8 +44,12 @@ for t in "${order[@]}"; do
     perl -pi -e 'if (!$done && /^---$/) { $_ .= "last_loaded: '"$today"'\n"; $done = 1 }' "$f"
   fi
   echo "$f"
-  parent=$(awk -F': *' '/^parent:/{print $2; exit}' "$f")
-  if [ -n "${parent:-}" ]; then
-    echo "PARENT:$t:$DIR/$parent.md"
-  fi
+  while IFS= read -r dep; do
+    [ -n "$dep" ] || continue
+    echo "DEPENDS_ON:$t:$DIR/$dep.md"
+  done < <(awk '
+    /^depends_on:/{f=1;next}
+    f && /^[^[:space:]-]/{f=0}
+    f && /^[[:space:]]*-[[:space:]]/{sub(/^[[:space:]]*-[[:space:]]*/,"");print}
+  ' "$f")
 done
