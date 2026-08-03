@@ -2,6 +2,7 @@
 !.gitignore
 !append-log.sh
 !archive.sh
+!depended-context.sh
 !handoff-context.sh
 !list-context.sh
 !load-context.sh

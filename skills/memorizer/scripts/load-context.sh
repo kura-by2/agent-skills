@@ -1,7 +1,6 @@
 #!/bin/bash
 # Usage: load-context.sh <topic...>
 # 指定トピックの存在するものを last_loaded 更新して読むべき .md のパスを出力する。
-# depends_on は自動ロードせず、依存先のパスだけを DEPENDS_ON:<topic>:<path> で提示する。
 # 見つからないトピックは MISSING:<topic> を出力する。
 set -euo pipefail
 
@@ -44,12 +43,4 @@ for t in "${order[@]}"; do
     perl -pi -e 'if (!$done && /^---$/) { $_ .= "last_loaded: '"$today"'\n"; $done = 1 }' "$f"
   fi
   echo "$f"
-  while IFS= read -r dep; do
-    [ -n "$dep" ] || continue
-    echo "DEPENDS_ON:$t:$DIR/$dep.md"
-  done < <(awk '
-    /^depends_on:/{f=1;next}
-    f && /^[^[:space:]-]/{f=0}
-    f && /^[[:space:]]*-[[:space:]]/{sub(/^[[:space:]]*-[[:space:]]*/,"");print}
-  ' "$f")
 done

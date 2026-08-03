@@ -4,7 +4,8 @@ description: >
   コンテキスト管理スキル。作業コンテキストをトピック別ファイルに保存・ロード・一覧表示する。
   `/memorizer new <topic>` で空トピック作成、`/memorizer save [topic]` で保存、
   `/memorizer handoff <parent> <child>` で次フェーズ用トピックを作成、
-  `/memorizer load <topic...>` でロード、`/memorizer list` で一覧、`/memorizer compact` で類似トピック統合、
+  `/memorizer load <topic...>` でロード、`/memorizer depended <topic...>` で依存先を補足読み、
+  `/memorizer list` で一覧、`/memorizer compact` で類似トピック統合、
   `/memorizer archive [days]` で未参照トピックをアーカイブに退避。
 ---
 
@@ -32,7 +33,7 @@ LLM が内容を埋めるセクション。各セクション最大5項目。
 ---
 topic: {topic}
 updated: {date}
-depends_on:       # 省略可。ロード時は依存先のパス提示のみ
+depends_on:       # 省略可。depended で補足読みされる
   - {topic-a}
 ---
 
@@ -80,16 +81,26 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
    bash {BASE_DIR}/scripts/handoff-context.sh <parent-topic> <child-topic>
    ```
 2. 子トピック本文には、親の `## 決定事項` と `## 次のアクション` をスナップショットとして写す。子が単体で継続できるようにし、親へのライブ参照には依存しない。
-3. 子トピックのフロントマターには `depends_on:` で `<parent-topic>` を付ける。`depends_on:` は lazy なポインタで、依存先トピックの場所を示すだけ。依存先の退避はしない。
+3. 子トピックのフロントマターには `depends_on:` で `<parent-topic>` を付ける。`depends_on:` は lazy なポインタで、`/memorizer depended` の補足読み対象になる。依存先の退避はしない。
 
 ### `/memorizer load <topic...>`
 ```bash
 bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
-出力された通常のパスを Read する。`DEPENDS_ON:<topic>:<path>` は `topic` の依存先トピックのパス提示のみで、Read しない。依存先を読むのはユーザーが明示的に `/memorizer load <dependency-topic>` を指示したときだけ。
+出力された通常のパスを Read する。depends_on は load では自動で読まない。
 `MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。
+ロードしたトピックの内容だけでは明らかに情報が不足している場合、`/memorizer depended <topic>` の実行をユーザーに推奨として提示する。
+モデル判断で自発的に depended を実行して読むことは控えめにするが、必要な場合は許容する。
+
+### `/memorizer depended [topic...]`
+`topic` 未指定なら、このセッションでロード済みのトピック名をすべて渡す。
+```bash
+bash {BASE_DIR}/scripts/depended-context.sh <topic...>
+```
+出力された通常のパスを補足情報として Read する。起点トピック自身は出力されず、depends_on を再帰的にたどった依存先だけが出力される。
+`MISSING:<topic>` は load と同様に扱う。
 
 ### `/memorizer list`
 ```bash
