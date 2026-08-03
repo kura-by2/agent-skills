@@ -1,7 +1,6 @@
 #!/bin/bash
 # Usage: load-context.sh <topic...>
-# 指定トピックと depends_on を再帰解決し、存在するものを last_loaded 更新して
-# 読むべき .md のパスを依存順（依存先 → 依存元）に出力する。
+# 指定トピックの存在するものを last_loaded 更新して読むべき .md のパスを出力する。
 # 見つからないトピックは MISSING:<topic> を出力する。
 set -euo pipefail
 
@@ -11,7 +10,7 @@ today=$(date +%F)
 seen=" "
 order=()
 
-resolve() {
+queue() {
   local t="$1"
   case "$seen" in *" $t "*) return ;; esac
   seen="$seen$t "
@@ -20,19 +19,11 @@ resolve() {
     echo "MISSING:$t"
     return
   fi
-  local dep
-  for dep in $(awk '
-    /^depends_on:/{f=1;next}
-    f && /^[^[:space:]-]/{f=0}
-    f && /^[[:space:]]*-[[:space:]]/{sub(/^[[:space:]]*-[[:space:]]*/,"");print}
-  ' "$f"); do
-    resolve "$dep"
-  done
   order+=("$t")
 }
 
 for t in "$@"; do
-  resolve "$t"
+  queue "$t"
 done
 
 for t in "${order[@]}"; do
