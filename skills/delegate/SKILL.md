@@ -2,7 +2,6 @@
 name: delegate
 description: >
   ファンネル（委譲先バックエンド）にコード実装を委譲するスキル。`/delegate worktree_path` の形式で呼ぶ。
-  実装タスクが生じたとき、実装方法を自分で考え始めたらこのスキルを使うサイン。
   デフォルトの委譲先はCodex。rate-limit等で使えないときはclaudeバックエンドに切り替える。
 ---
 
