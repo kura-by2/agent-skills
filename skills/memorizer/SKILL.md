@@ -35,6 +35,8 @@ topic: {topic}
 updated: {date}
 depends_on:       # 省略可。depended で補足読みされる
   - {topic-a}
+goal_doc:         # 省略可。このトピックの不変ゴール・計画書の絶対パス。load 時に無条件で Read する。
+  /absolute/path/to/plan.md
 ---
 
 ## 現在の状態      # 1〜3行。index の summary はここの最初の非空行
@@ -88,9 +90,11 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
 bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
 出力された通常のパスを Read する。depends_on は load では自動で読まない。
+フロントマターに `goal_doc:` があれば、そのファイルを**無条件で Read** してゴールとして採用する。ゴールを固定した上で `## 決定事項`・`## 次のアクション` を実行前提として採用し、その後に要約・一覧提示へ進む。
 `MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。
+**要約・一覧提示で止めない。** `## 決定事項`・`## 次のアクション`・本文中の前提値（base ブランチ・命名/設計規約・実験の狙い等）を、以後の作業の「実行の前提」として採用する。以降そのセッションでは、context 内で答えが出る事項をユーザーへ聞き返さない（「どこを見るか」が context に書いてあるなら自分で特定する）。実環境（worktree 一覧・別の計画書など）と食い違う場合も、まず context 記載を正として突き合わせてから動き、食い違いの解消をユーザーへ丸投げしない。
 ロードしたトピックの内容だけでは明らかに情報が不足している場合、`/memorizer depended <topic>` の実行をユーザーに推奨として提示する。
 モデル判断で自発的に depended を実行して読むことは控えめにするが、必要な場合は許容する。
 
