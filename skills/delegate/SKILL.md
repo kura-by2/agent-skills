@@ -1,15 +1,15 @@
 ---
 name: delegate
 description: >
-  ファンネル（委譲先バックエンド）に作業を委譲するスキル。`/delegate worktree_path` の形式で呼ぶ。
-  実装はCodex、調査/設計とレビューはclaude agentへ振り分ける。
+  ファンネル（委譲先バックエンド）に作業を委譲するスキル。`/delegate work_dir_path` の形式で呼ぶ。
+  作業種別に応じて委譲先へ振り分ける。
 ---
 
 # delegate
 
 実装内容の詳細（コード・ファイル構造）は考えない。**何をすべきか**だけを伝え、実作業は委譲先に任せる。
 
-delegate の役割は、作業場所（worktree）を指定し、その作業を非同期に実行させること。単発の委譲でも複数 worktree の並列委譲でも、委譲先コマンドは常に `run_in_background: true` で Bash を呼んで起動する。呼び出し側は投入後すぐ sync 点に戻り、委譲先の完了を同期的に待たない。
+delegate の役割は、作業場所を指定し、その作業を非同期に実行させること。単発でも複数の並列委譲でも、委譲先コマンドは常に `run_in_background: true` で Bash を呼んで起動する。呼び出し側は投入後すぐ sync 点に戻り、委譲先の完了を同期的に待たない。
 
 ## 委譲のスコープ
 
@@ -20,7 +20,7 @@ delegate の役割は、作業場所（worktree）を指定し、その作業を
 ## 使い方
 
 ```
-/delegate <worktree_path>
+/delegate <work_dir_path>
 ```
 
 ## バックエンド
@@ -31,9 +31,9 @@ delegate の役割は、作業場所（worktree）を指定し、その作業を
 - その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh sub high ...`（claude、agent `sub`、高性能モデル）
 - レビュー: `scripts/claude-review-exec.sh ...`（内部で `scripts/claude-exec.sh review standard ...` を実行。claude、agent `review`、低性能側モデル）
 
-Codex は `codex exec -C <worktree>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、worktree / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象 worktree と `git -C <worktree>` の使用を明示する。
+Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
 
-作業種別をまたぐ自動フォールバックはしない。rate-limit 等で指定バックエンドが使えない場合は、ログと状況をユーザーに報告して判断を仰ぐ。
+指定モデルが rate-limit 等で使えない場合は、同じ作業種別を満たせる代替を当該実行で自動的に探して使う。順序は、まず同サービスの低性能モデル、解消しなければ別サービス（codex↔claude）のモデルとする。対応表（`model-tiers.tsv` / `delegate-routes.tsv`）を書き換えるためのユーザー確認は、このフォールバック時のみ必要とする。週次の再取得・確定・保存のタイミングでは、従来どおり確認は不要。適切な代替が無い場合は、ログと状況をユーザーに報告して判断を仰ぐ。
 
 ### モデル階層とキャッシュ
 
@@ -43,7 +43,7 @@ Codex は `codex exec -C <worktree>` で起動し、追加の inputs/context デ
 
 codex は `codex debug models` を使って再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、既存の週次判定用キャッシュファイルに本文をそのまま保存する。
 
-再取得後、キャッシュ内容と `model-tiers.tsv` に差分があれば stderr に警告する。codex は `codex debug models` の JSON から `visibility == "list"` の slug だけを保存し、階層表にあるモデルが一覧から消えている場合を retirement 候補、一覧にあるモデルが階層表に無い場合を未分類として扱う。claude は階層表のモデルIDが公式 docs 本文に存在するか、近傍に deprecated / retired があるかを grep ベースで確認する。警告だけなら委譲は続行する。
+再取得後のキャッシュ内容と `model-tiers.tsv` の照合、警告、続行可否の詳細は `scripts/model-cache.sh` に実装を集約する。
 
 委譲先3分類の対応表は `.model-cache/delegate-routes.tsv` に生成する。これは `model-tiers.tsv` と利用可能モデル一覧から週次キャッシュ更新時に組み立てる生成物であり、git 追跡しない。
 
@@ -85,18 +85,18 @@ EOF
 
 ```bash
 mkdir -p /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/codex-exec.sh <worktree_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub high <worktree_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh <worktree_path> <goal_file> [diff_range] /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-exec.sh sub high <work_dir_path> <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] /tmp/delegate-inputs
 
 # 追加資料を選定した場合
-bash {BASE_DIR}/scripts/codex-exec.sh <worktree_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
-bash {BASE_DIR}/scripts/claude-exec.sh sub high <worktree_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
+bash {BASE_DIR}/scripts/claude-exec.sh sub high <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
 ```
 
 `claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/delegate-inputs/` に生成し、`claude-exec.sh review standard` に渡す。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
-Bash 呼び出しは常に `run_in_background: true` を指定する。複数 worktree の並列実行は、この非同期実行を複数回投入する一形態として扱う。
+Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
 ## 指示ファイルのテンプレート
 
@@ -110,7 +110,7 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数 wo
 ## 例
 
 ```bash
-bash {BASE_DIR}/scripts/codex-exec.sh /path/to/worktree <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub high /path/to/worktree <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/worktree /path/to/goal.md main..HEAD /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-exec.sh sub high /path/to/workdir <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD /tmp/delegate-inputs
 ```
