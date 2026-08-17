@@ -9,6 +9,8 @@ description: >
 
 実装内容の詳細（コード・ファイル構造）は考えない。**何をすべきか**だけを伝え、実作業は委譲先に任せる。
 
+delegate の役割は、作業場所（worktree）を指定し、その作業を非同期に実行させること。単発の委譲でも複数 worktree の並列委譲でも、委譲先コマンドは常に `run_in_background: true` で Bash を呼んで起動する。呼び出し側は投入後すぐ sync 点に戻り、委譲先の完了を同期的に待たない。
+
 ## 委譲のスコープ
 
 実装を委譲する場合、委譲先に依頼するのは **コード編集とコミットのみ**。テスト実行・rubocop / lint・アプリ起動・動作検証など、コード編集以外のツール実行を委譲先にさせない（検証は委譲元／別工程の責務）。
@@ -92,7 +94,7 @@ bash {BASE_DIR}/scripts/codex-exec.sh <worktree_path> <task>.md /tmp/delegate-in
 bash {BASE_DIR}/scripts/claude-exec.sh sub high <worktree_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
 ```
 
-バックグラウンドで複数worktreeを並列実行する場合は `run_in_background: true` で Bash を呼ぶ。
+Bash 呼び出しは常に `run_in_background: true` を指定する。複数 worktree の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
 ## 指示ファイルのテンプレート
 
