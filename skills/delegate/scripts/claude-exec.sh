@@ -77,4 +77,5 @@ claude -p "作業対象のリポジトリは ${WORKTREE} です。${TASK_PATH} �
   --agent "$AGENT" \
   --model "$MODEL" \
   "${ADD_DIR_ARGS[@]}" \
-  --dangerously-skip-permissions
+  --dangerously-skip-permissions \
+  < /dev/null

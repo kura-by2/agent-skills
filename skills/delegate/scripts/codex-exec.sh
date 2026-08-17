@@ -56,4 +56,5 @@ fi
 codex exec -C "$WORKTREE" \
   "${ADD_DIR_ARGS[@]}" \
   --dangerously-bypass-approvals-and-sandbox \
-  "${TASK_PATH} を読んで対応してください。${CONTEXT_PROMPT}"
+  "${TASK_PATH} を読んで対応してください。${CONTEXT_PROMPT}" \
+  < /dev/null
