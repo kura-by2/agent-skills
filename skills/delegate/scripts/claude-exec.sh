@@ -1,11 +1,10 @@
 #!/bin/bash
-# Usage: claude-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
-# ファンネル（実装委譲）の実行エンジン（claude 版）。codex-exec.sh の claude 置き換え。
+# Usage: claude-exec.sh <agent> <model_tier> <worktree> <task_file> [inputs_dir] [selected_context_file]
+# ファンネル（調査/設計/レビュー委譲）の実行エンジン（claude 版）。
 #
 # 重要:
-#   - --agent を付けず「素の claude -p」で起動する。通常作業用の Edit/Write ガードは
-#     .claude/agents/main.md の frontmatter にあり、エージェント指定なしなら発火しない。
-#     これによりファンネルは worktree のコードを直接編集できる。
+#   - agent は sub または review に限定する。どちらも .claude/agents 側で
+#     Edit/Write/MultiEdit を禁止する。
 #   - cd はしない。作業対象 worktree は --add-dir で渡し、プロンプトで作業ルートを明示する。
 #     cwd は呼び出し元（プロジェクトルート）のままなので、git 操作が cwd 側リポジトリに
 #     当たらないよう、プロンプトで `git -C <worktree>` を強制する。
@@ -14,17 +13,29 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/model-cache.sh"
 
-WORKTREE="${1:-}"
-TASK="${2:-}"
-INPUTS_DIR="${3:-}"
-SELECTED_CONTEXT_FILE="${4:-}"
+AGENT="${1:-}"
+MODEL_TIER="${2:-}"
+WORKTREE="${3:-}"
+TASK="${4:-}"
+INPUTS_DIR="${5:-}"
+SELECTED_CONTEXT_FILE="${6:-}"
 
-if [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
-  echo "Usage: claude-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]"
+if [ -z "$AGENT" ] || [ -z "$MODEL_TIER" ] || [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
+  echo "Usage: claude-exec.sh <agent> <model_tier> <worktree> <task_file> [inputs_dir] [selected_context_file]"
   exit 1
 fi
 
+case "$AGENT" in
+  sub|review)
+    ;;
+  *)
+    printf 'error: unsupported claude delegate agent: %s\n' "$AGENT" >&2
+    exit 1
+    ;;
+esac
+
 delegate_ensure_model_cache claude
+MODEL="$(delegate_select_model claude "$MODEL_TIER")"
 
 TASK_PATH="$TASK"
 if [ -n "$INPUTS_DIR" ]; then
@@ -63,5 +74,7 @@ if [ "${DELEGATE_SKIP_EXEC:-}" = "1" ]; then
 fi
 
 claude -p "作業対象のリポジトリは ${WORKTREE} です。${TASK_PATH} を読み、${WORKTREE} 内のファイルに対して対応してください。git 操作はすべて 'git -C ${WORKTREE} ...' で行い、それ以外のリポジトリやディレクトリには触れないこと。${CONTEXT_PROMPT}" \
+  --agent "$AGENT" \
+  --model "$MODEL" \
   "${ADD_DIR_ARGS[@]}" \
   --dangerously-skip-permissions
