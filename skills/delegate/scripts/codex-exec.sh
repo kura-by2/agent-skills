@@ -17,6 +17,11 @@ fi
 
 delegate_ensure_model_cache codex
 
+TASK_PATH="$TASK"
+if [ -n "$INPUTS_DIR" ]; then
+  TASK_PATH="$INPUTS_DIR/$TASK"
+fi
+
 ADD_DIR_ARGS=()
 if [ -n "$INPUTS_DIR" ]; then
   ADD_DIR_ARGS+=(--add-dir "$INPUTS_DIR")
@@ -51,4 +56,4 @@ fi
 codex exec -C "$WORKTREE" \
   "${ADD_DIR_ARGS[@]}" \
   --dangerously-bypass-approvals-and-sandbox \
-  "${TASK} を読んで対応してください。${CONTEXT_PROMPT}"
+  "${TASK_PATH} を読んで対応してください。${CONTEXT_PROMPT}"
