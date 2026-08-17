@@ -29,7 +29,7 @@ delegate の役割は、作業場所（worktree）を指定し、その作業を
 
 - 実装: `scripts/codex-exec.sh`（Codex、agent指定なし、Codex既定モデル）
 - その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh sub high ...`（claude、agent `sub`、高性能モデル）
-- レビュー: `scripts/claude-exec.sh review standard ...`（claude、agent `review`、低性能側モデル）
+- レビュー: `scripts/claude-review-exec.sh ...`（内部で `scripts/claude-exec.sh review standard ...` を実行。claude、agent `review`、低性能側モデル）
 
 Codex は `codex exec -C <worktree>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、worktree / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象 worktree と `git -C <worktree>` の使用を明示する。
 
@@ -87,12 +87,14 @@ EOF
 mkdir -p /tmp/delegate-inputs
 bash {BASE_DIR}/scripts/codex-exec.sh <worktree_path> <task>.md /tmp/delegate-inputs
 bash {BASE_DIR}/scripts/claude-exec.sh sub high <worktree_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh review standard <worktree_path> <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-review-exec.sh <worktree_path> <goal_file> [diff_range] /tmp/delegate-inputs
 
 # 追加資料を選定した場合
 bash {BASE_DIR}/scripts/codex-exec.sh <worktree_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
 bash {BASE_DIR}/scripts/claude-exec.sh sub high <worktree_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
 ```
+
+`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/delegate-inputs/` に生成し、`claude-exec.sh review standard` に渡す。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数 worktree の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
@@ -110,4 +112,5 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数 wo
 ```bash
 bash {BASE_DIR}/scripts/codex-exec.sh /path/to/worktree <task>.md /tmp/delegate-inputs
 bash {BASE_DIR}/scripts/claude-exec.sh sub high /path/to/worktree <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/worktree /path/to/goal.md main..HEAD /tmp/delegate-inputs
 ```

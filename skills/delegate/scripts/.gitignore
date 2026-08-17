@@ -1,5 +1,6 @@
 *
 !.gitignore
+!claude-review-exec.sh
 !claude-exec.sh
 !codex-exec.sh
 !model-cache.sh
