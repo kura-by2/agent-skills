@@ -16,7 +16,7 @@ if [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
 fi
 
 delegate_ensure_model_cache codex
-MODEL="$(delegate_select_model codex high)"
+MODEL="$(delegate_model_for_task_type implementation)"
 
 TASK_PATH="$TASK"
 if [ -n "$INPUTS_DIR" ]; then

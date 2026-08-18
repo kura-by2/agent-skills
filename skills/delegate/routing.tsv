@@ -1,0 +1,4 @@
+# task_type	backend	agent	model
+implementation	codex		gpt-5.5
+other	claude	sub	claude-opus-4-8
+review	claude	review	claude-haiku-4-5

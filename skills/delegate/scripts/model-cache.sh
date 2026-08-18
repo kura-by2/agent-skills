@@ -115,6 +115,72 @@ delegate_model_backend_from_name() {
   esac
 }
 
+delegate_routing_file() {
+  local skill_dir
+
+  skill_dir="$(delegate_model_cache_skill_dir)"
+  printf '%s\n' "${DELEGATE_ROUTING_FILE:-$skill_dir/routing.tsv}"
+}
+
+delegate_model_for_route() {
+  local match_field="$1"
+  local match_value="$2"
+  local routing_file task_type backend agent model line
+
+  routing_file="$(delegate_routing_file)"
+
+  if [ ! -f "$routing_file" ]; then
+    printf 'error: delegate routing table is missing: %s\n' "$routing_file" >&2
+    return 1
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    IFS=$'\037' read -r task_type backend agent model _ <<< "${line//$'\t'/$'\037'}"
+    [ -n "$task_type" ] || continue
+    case "$task_type" in
+      \#*)
+        continue
+        ;;
+    esac
+
+    case "$match_field" in
+      task_type)
+        [ "$task_type" = "$match_value" ] || continue
+        ;;
+      agent)
+        [ "$agent" = "$match_value" ] || continue
+        ;;
+      *)
+        printf 'error: unsupported delegate routing match field: %s\n' "$match_field" >&2
+        return 1
+        ;;
+    esac
+
+    if [ -z "$backend" ] || [ -z "$model" ]; then
+      printf 'error: delegate routing row is incomplete for %s %s\n' "$match_field" "$match_value" >&2
+      return 1
+    fi
+
+    printf '%s\n' "$model"
+    return 0
+  done < "$routing_file"
+
+  printf 'error: no delegate routing row for %s %s\n' "$match_field" "$match_value" >&2
+  return 1
+}
+
+delegate_model_for_task_type() {
+  local task_type="$1"
+
+  delegate_model_for_route task_type "$task_type"
+}
+
+delegate_model_for_agent() {
+  local agent="$1"
+
+  delegate_model_for_route agent "$agent"
+}
+
 delegate_model_cache_file_for_backend() {
   local backend="$1"
   local skill_dir cache_dir
@@ -315,48 +381,6 @@ delegate_maybe_emit_fallback_suggest() {
   printf 'DELEGATE_FALLBACK_SUGGEST\tfailed=%s\tnext=%s\treason=exec_failed\n' "$failed_model" "$next_model" >&2
 }
 
-delegate_generate_route_table() {
-  local skill_dir cache_dir route_file tmp_file codex_cache claude_cache implementation_model sub_model review_model
-
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/.model-cache}"
-  route_file="$cache_dir/delegate-routes.tsv"
-  tmp_file="${route_file}.tmp"
-  codex_cache="$cache_dir/codex-models.json"
-  claude_cache="$cache_dir/claude-models.json"
-
-  if ! delegate_model_cache_is_current "$codex_cache" || ! delegate_model_cache_is_current "$claude_cache"; then
-    return 0
-  fi
-
-  if ! implementation_model="$(delegate_select_model codex high)"; then
-    printf 'warning: skipped delegate route table generation because implementation model could not be selected\n' >&2
-    rm -f "$tmp_file"
-    return 0
-  fi
-
-  if ! sub_model="$(delegate_select_model claude high)"; then
-    printf 'warning: skipped delegate route table generation because sub model could not be selected\n' >&2
-    rm -f "$tmp_file"
-    return 0
-  fi
-
-  if ! review_model="$(delegate_select_model claude standard)"; then
-    printf 'warning: skipped delegate route table generation because review model could not be selected\n' >&2
-    rm -f "$tmp_file"
-    return 0
-  fi
-
-  {
-    printf 'task_type\tbackend\tagent\tselection\tmodel\n'
-    printf 'implementation\tcodex\t\thighest\t%s\n' "$implementation_model"
-    printf 'other\tclaude\tsub\thighest\t%s\n' "$sub_model"
-    printf 'review\tclaude\treview\tlowest\t%s\n' "$review_model"
-  } > "$tmp_file"
-
-  mv "$tmp_file" "$route_file"
-}
-
 delegate_ensure_model_cache() {
   local backend="$1"
   local skill_dir cache_dir cache_file
@@ -366,7 +390,6 @@ delegate_ensure_model_cache() {
   cache_file="$cache_dir/${backend}-models.json"
 
   if delegate_model_cache_is_current "$cache_file"; then
-    delegate_generate_route_table
     return 0
   fi
 
@@ -376,5 +399,4 @@ delegate_ensure_model_cache() {
   fi
 
   delegate_warn_model_tier_drift "$backend" "$cache_file"
-  delegate_generate_route_table
 }

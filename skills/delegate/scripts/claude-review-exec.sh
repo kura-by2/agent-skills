@@ -42,4 +42,4 @@ goal: $GOAL_FILE
 target: $WORKTREE $DIFF_RANGE
 EOF
 
-exec bash "$SCRIPT_DIR/claude-exec.sh" review standard "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
+exec bash "$SCRIPT_DIR/claude-exec.sh" review "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"

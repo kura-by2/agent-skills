@@ -25,11 +25,15 @@ delegate の役割は、作業場所を指定し、その作業を非同期に�
 
 ## バックエンド
 
-委譲先は作業種別で固定する。
+利用可能モデル一覧は `model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` の git 管理表で、performance はフォールバック候補の並べ替えに使う。
 
-- 実装: `scripts/codex-exec.sh`（Codex、agent指定なし、最高性能の Codex モデル）
-- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh sub high ...`（claude、agent `sub`、高性能モデル）
-- レビュー: `scripts/claude-review-exec.sh ...`（内部で `scripts/claude-exec.sh review standard ...` を実行。claude、agent `review`、低性能側モデル）
+委譲先の `task_type` と backend / agent / 使用モデルの対応は `routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` の git 管理表で、実行スクリプトはこの表から具体モデル名を直接読む。implementation の agent は空欄にする。
+
+起動スクリプトは作業種別で選ぶ。
+
+- 実装: `scripts/codex-exec.sh`
+- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh`
+- レビュー: `scripts/claude-review-exec.sh`
 
 Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
 
@@ -37,15 +41,13 @@ Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context デ
 
 ### モデル階層とキャッシュ
 
-委譲先モデルの性能順は `model-tiers.tsv` に持つ。これは `モデル名<TAB>性能値` の git 管理表で、性能値が大きいほど高性能。backend はモデル名から判定し、実行スクリプトはこの表を書き換えない。
+委譲先モデルの性能順は `model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` の git 管理表で、性能値が大きいほど高性能。実行スクリプトはこの表を書き換えない。主選定は `routing.tsv` の具体モデル名を使い、`model-tiers.tsv` はフォールバック候補の並べ替えに使う。
 
 モデル確認用キャッシュは `.model-cache/<backend>-models.json` に週次保存する。このキャッシュは生成物なので git 追跡しない。実行スクリプトの冒頭で、キャッシュの mtime の ISO 週が今週ならそのまま委譲し、キャッシュ不在または週が変わっている場合だけ正規手段で再取得する。
 
 codex は `codex debug models` を使って再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、既存の週次判定用キャッシュファイルに本文をそのまま保存する。
 
 再取得後のキャッシュ内容と `model-tiers.tsv` の照合、警告、続行可否の詳細は `scripts/model-cache.sh` に実装を集約する。
-
-委譲先3分類の対応表は `.model-cache/delegate-routes.tsv` に生成する。これは `model-tiers.tsv` と利用可能モデル一覧から週次キャッシュ更新時に組み立てる生成物であり、git 追跡しない。
 
 モデル一覧または claude 公式 docs Markdown の取得に失敗した場合は fail-closed とし、古いキャッシュで続行せず委譲を実行しない。
 
@@ -86,15 +88,15 @@ EOF
 ```bash
 mkdir -p /tmp/delegate-inputs
 bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub high <work_dir_path> <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs
 bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] /tmp/delegate-inputs
 
 # 追加資料を選定した場合
 bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
-bash {BASE_DIR}/scripts/claude-exec.sh sub high <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
+bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
 ```
 
-`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/delegate-inputs/` に生成し、`claude-exec.sh review standard` に渡す。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/delegate-inputs/` に生成し、review agent を `claude-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-exec.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
@@ -111,6 +113,6 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数の
 
 ```bash
 bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub high /path/to/workdir <task>.md /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/claude-exec.sh sub /path/to/workdir <task>.md /tmp/delegate-inputs
 bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD /tmp/delegate-inputs
 ```
