@@ -394,7 +394,13 @@ delegate_ensure_model_cache() {
   fi
 
   if ! delegate_refresh_model_cache "$backend" "$cache_file"; then
-    printf 'error: delegate backend %s cannot run because model cache refresh failed\n' "$backend" >&2
+    if [ -f "$cache_file" ]; then
+      printf 'warning: delegate backend %s model cache refresh failed; continuing with stale cache from %s\n' \
+        "$backend" "$(date -r "$cache_file" '+%Y-%m-%d')" >&2
+      delegate_warn_model_tier_drift "$backend" "$cache_file"
+      return 0
+    fi
+    printf 'error: delegate backend %s cannot run because model cache refresh failed and no cache exists\n' "$backend" >&2
     return 1
   fi
 

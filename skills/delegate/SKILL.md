@@ -49,7 +49,7 @@ codex は `codex debug models` を使って再取得する。claude は CLI に�
 
 再取得後のキャッシュ内容と `model-tiers.tsv` の照合、警告、続行可否の詳細は `scripts/model-cache.sh` に実装を集約する。
 
-モデル一覧または claude 公式 docs Markdown の取得に失敗した場合は fail-closed とし、古いキャッシュで続行せず委譲を実行しない。
+モデル一覧または claude 公式 docs Markdown の取得に失敗した場合、古いキャッシュが存在すればその日付を警告1行で出して続行する（廃止モデル指定の失敗は exec 失敗として `DELEGATE_FALLBACK_SUGGEST` で可視化される）。キャッシュが1つも無い場合のみ fail-closed とし委譲を実行しない。
 
 ## 渡すべき情報
 
