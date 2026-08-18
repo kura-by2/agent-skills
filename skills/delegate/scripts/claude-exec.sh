@@ -79,7 +79,7 @@ trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' EXIT
 RC=0
 PROMPT="作業対象のリポジトリは ${WORKTREE} です。${TASK_PATH} を読み、${WORKTREE} 内のファイルに対して対応してください。git 操作はすべて 'git -C ${WORKTREE} ...' で行い、それ以外のリポジトリやディレクトリには触れないこと。自分の権限範囲外の作業を求められたら固定文言 DELEGATE_PERMISSION_OUT_OF_SCOPE だけを出して終了すること。${CONTEXT_PROMPT}"
 
-if ! claude -p "$PROMPT" \
+if ! CLAUDE_DELEGATE_SESSION=1 claude -p "$PROMPT" \
   --agent "$AGENT" \
   --model "$MODEL" \
   "${ADD_DIR_ARGS[@]}" \
