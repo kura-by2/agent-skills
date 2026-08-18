@@ -138,16 +138,9 @@ delegate_model_table_for_backend() {
   fi
 
   awk -F '\t' -v backend="$backend" '
-    $0 !~ /^#/ && NF >= 2 {
-      model = $1
-      model_backend = ""
-      if (model ~ /^gpt-/) {
-        model_backend = "codex"
-      } else if (model ~ /^claude-/) {
-        model_backend = "claude"
-      }
-      if (model_backend == backend && $2 ~ /^[0-9]+([.][0-9]+)?$/) {
-        print model "\t" $2 "\t" NR
+    $0 !~ /^#/ && NF >= 3 {
+      if ($1 == backend && $3 ~ /^[0-9]+([.][0-9]+)?$/) {
+        print $2 "\t" $3 "\t" NR
       }
     }
   ' "$tier_file" |

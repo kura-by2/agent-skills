@@ -1,7 +1,7 @@
-# model	performance
-gpt-5.5	100
-gpt-5.4	95
-claude-opus-4-8	93
-claude-sonnet-4-6	60
-gpt-5.4-mini	55
-claude-haiku-4-5	40
+# backend	model	performance
+codex	gpt-5.5	100
+codex	gpt-5.4	95
+claude	claude-opus-4-8	93
+claude	claude-sonnet-4-6	60
+codex	gpt-5.4-mini	55
+claude	claude-haiku-4-5	40
