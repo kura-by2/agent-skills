@@ -27,17 +27,17 @@ delegate の役割は、作業場所を指定し、その作業を非同期に�
 
 委譲先は作業種別で固定する。
 
-- 実装: `scripts/codex-exec.sh`（Codex、agent指定なし、Codex既定モデル）
+- 実装: `scripts/codex-exec.sh`（Codex、agent指定なし、最高性能の Codex モデル）
 - その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh sub high ...`（claude、agent `sub`、高性能モデル）
 - レビュー: `scripts/claude-review-exec.sh ...`（内部で `scripts/claude-exec.sh review standard ...` を実行。claude、agent `review`、低性能側モデル）
 
 Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
 
-指定モデルが rate-limit 等で使えない場合は、同じ作業種別を満たせる代替を当該実行で自動的に探して使う。順序は、まず同サービスの低性能モデル、解消しなければ別サービス（codex↔claude）のモデルとする。対応表（`model-tiers.tsv` / `delegate-routes.tsv`）を書き換えるためのユーザー確認は、このフォールバック時のみ必要とする。週次の再取得・確定・保存のタイミングでは、従来どおり確認は不要。適切な代替が無い場合は、ログと状況をユーザーに報告して判断を仰ぐ。
+委譲 CLI が非0終了し、出力に `DELEGATE_PERMISSION_OUT_OF_SCOPE` が含まれない場合、実行スクリプトは stderr に `DELEGATE_FALLBACK_SUGGEST<TAB>failed=<model><TAB>next=<model><TAB>reason=exec_failed` を1行だけ出す。これは提案のみであり、自動リトライ・自動モデル切替・`model-tiers.tsv` の書き換えはしないため、「同じ指示での自動リトライはしない」規約と矛盾しない。
 
 ### モデル階層とキャッシュ
 
-委譲先モデルの思考力階層は `model-tiers.tsv` に持つ。これは git 管理の階層表で、バックエンド・モデル識別子・階層・確認日を人間/呼び出し側LLMが更新する。実行スクリプトはこの表を書き換えない。
+委譲先モデルの性能順は `model-tiers.tsv` に持つ。これは `モデル名<TAB>性能値` の git 管理表で、性能値が大きいほど高性能。backend はモデル名から判定し、実行スクリプトはこの表を書き換えない。
 
 モデル確認用キャッシュは `.model-cache/<backend>-models.json` に週次保存する。このキャッシュは生成物なので git 追跡しない。実行スクリプトの冒頭で、キャッシュの mtime の ISO 週が今週ならそのまま委譲し、キャッシュ不在または週が変わっている場合だけ正規手段で再取得する。
 

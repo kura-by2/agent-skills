@@ -1,7 +1,7 @@
-# backend	model	tier	checked_on
-codex	gpt-5.5	high	2026-07-13
-codex	gpt-5.4	high	2026-07-13
-codex	gpt-5.4-mini	standard	2026-07-13
-claude	claude-fable-5	high	2026-07-13
-claude	claude-opus-4-8	high	2026-07-13
-claude	claude-sonnet-5	standard	2026-07-13
+# model	performance
+gpt-5.5	100
+gpt-5.4	95
+claude-opus-4-8	93
+claude-sonnet-4-6	60
+gpt-5.4-mini	55
+claude-haiku-4-5	40

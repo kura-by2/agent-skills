@@ -99,6 +99,65 @@ delegate_refresh_model_cache() {
   esac
 }
 
+delegate_model_backend_from_name() {
+  local model="$1"
+
+  case "$model" in
+    gpt-*)
+      printf 'codex\n'
+      ;;
+    claude-*)
+      printf 'claude\n'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+delegate_model_cache_file_for_backend() {
+  local backend="$1"
+  local skill_dir cache_dir
+
+  skill_dir="$(delegate_model_cache_skill_dir)"
+  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/.model-cache}"
+  printf '%s/%s-models.json\n' "$cache_dir" "$backend"
+}
+
+delegate_model_table_for_backend() {
+  local backend="$1"
+  local order="$2"
+  local skill_dir tier_file
+
+  skill_dir="$(delegate_model_cache_skill_dir)"
+  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
+
+  if [ ! -f "$tier_file" ]; then
+    printf 'error: delegate model performance table is missing: %s\n' "$tier_file" >&2
+    return 1
+  fi
+
+  awk -F '\t' -v backend="$backend" '
+    $0 !~ /^#/ && NF >= 2 {
+      model = $1
+      model_backend = ""
+      if (model ~ /^gpt-/) {
+        model_backend = "codex"
+      } else if (model ~ /^claude-/) {
+        model_backend = "claude"
+      }
+      if (model_backend == backend && $2 ~ /^[0-9]+([.][0-9]+)?$/) {
+        print model "\t" $2 "\t" NR
+      }
+    }
+  ' "$tier_file" |
+  if [ "$order" = "asc" ]; then
+    sort -t $'\t' -k2,2n -k3,3n
+  else
+    sort -t $'\t' -k2,2nr -k3,3n
+  fi
+}
+
 delegate_warn_model_tier_drift() {
   local backend="$1"
   local cache_file="$2"
@@ -108,14 +167,12 @@ delegate_warn_model_tier_drift() {
   tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
 
   if [ ! -f "$tier_file" ]; then
-    printf 'warning: delegate model tier table is missing: %s\n' "$tier_file" >&2
+    printf 'warning: delegate model performance table is missing: %s\n' "$tier_file" >&2
     return 0
   fi
 
   if [ "$backend" = "claude" ]; then
-    awk -F '\t' -v backend="$backend" '
-      $0 !~ /^#/ && NF >= 4 && $1 == backend { print $2 }
-    ' "$tier_file" | sort -u |
+    delegate_model_table_for_backend "$backend" desc | cut -f1 | sort -u |
     while IFS= read -r model || [ -n "$model" ]; do
       [ -n "$model" ] || continue
       if ! grep -Fq "$model" "$cache_file"; then
@@ -138,9 +195,7 @@ delegate_warn_model_tier_drift() {
     return 0
   fi
 
-  awk -F '\t' -v backend="$backend" '
-    $0 !~ /^#/ && NF >= 4 && $1 == backend { print $2 }
-  ' "$tier_file" | sort -u > "$tier_models"
+  delegate_model_table_for_backend "$backend" desc | cut -f1 | sort -u > "$tier_models"
 
   while IFS= read -r model || [ -n "$model" ]; do
     [ -n "$model" ] || continue
@@ -179,21 +234,27 @@ delegate_model_is_available() {
 
 delegate_select_model() {
   local backend="$1"
-  local tier="$2"
-  local skill_dir cache_dir cache_file tier_file model
+  local selector="$2"
+  local cache_file order model
 
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/.model-cache}"
-  cache_file="$cache_dir/${backend}-models.json"
-  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
+  cache_file="$(delegate_model_cache_file_for_backend "$backend")"
+  order="desc"
+
+  case "$selector" in
+    high|highest)
+      order="desc"
+      ;;
+    standard|lowest)
+      order="asc"
+      ;;
+    *)
+      printf 'error: unsupported delegate model selector: %s\n' "$selector" >&2
+      return 1
+      ;;
+  esac
 
   if [ ! -f "$cache_file" ]; then
     printf 'error: delegate model cache is missing for backend %s: %s\n' "$backend" "$cache_file" >&2
-    return 1
-  fi
-
-  if [ ! -f "$tier_file" ]; then
-    printf 'error: delegate model tier table is missing: %s\n' "$tier_file" >&2
     return 1
   fi
 
@@ -203,16 +264,66 @@ delegate_select_model() {
       printf '%s\n' "$model"
       return 0
     fi
-  done < <(awk -F '\t' -v backend="$backend" -v tier="$tier" '
-    $0 !~ /^#/ && NF >= 4 && $1 == backend && $3 == tier { print $2 }
-  ' "$tier_file")
+  done < <(delegate_model_table_for_backend "$backend" "$order" | cut -f1)
 
-  printf 'error: no available delegate model for backend %s tier %s\n' "$backend" "$tier" >&2
+  printf 'error: no available delegate model for backend %s selector %s\n' "$backend" "$selector" >&2
   return 1
 }
 
+delegate_next_available_model() {
+  local failed_model="$1"
+  local failed_backend backend cache_file model backends
+
+  if ! failed_backend="$(delegate_model_backend_from_name "$failed_model")"; then
+    printf 'none\n'
+    return 0
+  fi
+
+  case "$failed_backend" in
+    codex)
+      backends="codex claude"
+      ;;
+    claude)
+      backends="claude codex"
+      ;;
+  esac
+
+  for backend in $backends; do
+    cache_file="$(delegate_model_cache_file_for_backend "$backend")"
+    [ -f "$cache_file" ] || continue
+    while IFS= read -r model || [ -n "$model" ]; do
+      [ -n "$model" ] || continue
+      [ "$model" != "$failed_model" ] || continue
+      if delegate_model_is_available "$backend" "$model" "$cache_file"; then
+        printf '%s\n' "$model"
+        return 0
+      fi
+    done < <(delegate_model_table_for_backend "$backend" desc | cut -f1)
+  done
+
+  printf 'none\n'
+}
+
+delegate_maybe_emit_fallback_suggest() {
+  local failed_model="$1"
+  local output_file="$2"
+  local rc="$3"
+  local next_model
+
+  if [ "$rc" -eq 0 ]; then
+    return 0
+  fi
+
+  if grep -Fq 'DELEGATE_PERMISSION_OUT_OF_SCOPE' "$output_file"; then
+    return 0
+  fi
+
+  next_model="$(delegate_next_available_model "$failed_model")"
+  printf 'DELEGATE_FALLBACK_SUGGEST\tfailed=%s\tnext=%s\treason=exec_failed\n' "$failed_model" "$next_model" >&2
+}
+
 delegate_generate_route_table() {
-  local skill_dir cache_dir route_file tmp_file codex_cache claude_cache sub_model review_model
+  local skill_dir cache_dir route_file tmp_file codex_cache claude_cache implementation_model sub_model review_model
 
   skill_dir="$(delegate_model_cache_skill_dir)"
   cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/.model-cache}"
@@ -222,6 +333,12 @@ delegate_generate_route_table() {
   claude_cache="$cache_dir/claude-models.json"
 
   if ! delegate_model_cache_is_current "$codex_cache" || ! delegate_model_cache_is_current "$claude_cache"; then
+    return 0
+  fi
+
+  if ! implementation_model="$(delegate_select_model codex high)"; then
+    printf 'warning: skipped delegate route table generation because implementation model could not be selected\n' >&2
+    rm -f "$tmp_file"
     return 0
   fi
 
@@ -238,10 +355,10 @@ delegate_generate_route_table() {
   fi
 
   {
-    printf 'task_type\tbackend\tagent\tmodel_tier\tmodel\n'
-    printf 'implementation\tcodex\t\tdefault\tdefault\n'
-    printf 'other\tclaude\tsub\thigh\t%s\n' "$sub_model"
-    printf 'review\tclaude\treview\tstandard\t%s\n' "$review_model"
+    printf 'task_type\tbackend\tagent\tselection\tmodel\n'
+    printf 'implementation\tcodex\t\thighest\t%s\n' "$implementation_model"
+    printf 'other\tclaude\tsub\thighest\t%s\n' "$sub_model"
+    printf 'review\tclaude\treview\tlowest\t%s\n' "$review_model"
   } > "$tmp_file"
 
   mv "$tmp_file" "$route_file"

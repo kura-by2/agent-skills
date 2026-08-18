@@ -16,6 +16,7 @@ if [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
 fi
 
 delegate_ensure_model_cache codex
+MODEL="$(delegate_select_model codex high)"
 
 TASK_PATH="$TASK"
 if [ -n "$INPUTS_DIR" ]; then
@@ -53,8 +54,23 @@ if [ "${DELEGATE_SKIP_EXEC:-}" = "1" ]; then
   exit 0
 fi
 
-codex exec -C "$WORKTREE" \
+OUTPUT_FILE="$(mktemp)"
+STDOUT_FILE="$(mktemp)"
+STDERR_FILE="$(mktemp)"
+trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' EXIT
+RC=0
+
+if ! codex exec -C "$WORKTREE" \
+  --model "$MODEL" \
   "${ADD_DIR_ARGS[@]}" \
   --dangerously-bypass-approvals-and-sandbox \
   "${TASK_PATH} を読んで対応してください。${CONTEXT_PROMPT}" \
-  < /dev/null
+  > "$STDOUT_FILE" 2> "$STDERR_FILE" < /dev/null; then
+  RC="${PIPESTATUS[0]}"
+fi
+
+cat "$STDOUT_FILE"
+cat "$STDERR_FILE" >&2
+cat "$STDOUT_FILE" "$STDERR_FILE" > "$OUTPUT_FILE"
+delegate_maybe_emit_fallback_suggest "$MODEL" "$OUTPUT_FILE" "$RC"
+exit "$RC"
