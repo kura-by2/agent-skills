@@ -11,6 +11,15 @@ description: >
 
 delegate の役割は、作業場所を指定し、その作業を非同期に実行させること。単発でも複数の並列委譲でも、委譲先コマンドは常に `run_in_background: true` で Bash を呼んで起動する。呼び出し側は投入後すぐ sync 点に戻り、委譲先の完了を同期的に待たない。
 
+## Memorizer トピック
+
+delegate は memorizer トピックをタスクのアンカーとして扱う。
+
+1. 実行前に、このタスクに対応する `<topic>` が存在するか確認する。
+2. 存在しない場合は、先に `/memorizer new <topic>` で作成する。
+3. 作業ファイルは必ず `/tmp/<topic>/` 配下に置く。
+4. サブタスク管理は `/tmp/<topic>/delegate-ledger.md` で行う。
+
 ## 委譲のスコープ
 
 実装を委譲する場合、委譲先に依頼するのは **コード編集とコミットのみ**。テスト実行・rubocop / lint・アプリ起動・動作検証など、コード編集以外のツール実行を委譲先にさせない（検証は委譲元／別工程の責務）。
@@ -55,6 +64,8 @@ codex は `codex debug models` を使って再取得する。claude は CLI に�
 
 - **何を実装するか**（エンドポイント名・機能の概要）
 - **参照すべき既存コード**（似た実装があればそのパスと何を参考にするか）
+- **親ゴール**（`/tmp/<topic>/preflight.md` と `/tmp/<topic>/goal-stack.md` から読み取る）
+- **サブタスクの意図・完了条件・検証方法**（委譲前に preflight sub モードで出力した内容）
 
 ## 渡してはいけない情報
 
@@ -63,11 +74,31 @@ codex は `codex debug models` を使って再取得する。claude は CLI に�
 - 実装の手順（委譲先が考える）
 - 検証・検収の指示（テスト実行・lint・動作確認は委譲のスコープ外）
 
+## サブタスク台帳
+
+delegate が切り出すサブタスクは goal-stack に積まず、`/tmp/<topic>/delegate-ledger.md` で管理する。
+
+台帳フォーマット:
+
+```markdown
+# Delegate Ledger
+
+- [ ] <subtask> | assignee: <backend>/<agent-or-model> | input: /tmp/<topic>/delegate-inputs/<task>.md | preflight: /tmp/<topic>/preflight-<subtask>.md | started: YYYY-MM-DD HH:MM
+```
+
+手順:
+
+1. 委譲前にサブタスクを台帳へ `[ ]` で追加する。
+2. サブタスクごとに preflight sub モードを実行し、`/tmp/<topic>/preflight-<subtask>.md` を作成する。
+3. 委譲プロンプトには、親ゴール、サブタスクの意図、完了条件、検証方法を必ず埋め込む。
+4. 委譲先の完了を確認したら、該当サブタスクだけを `[x]` に更新し `done: YYYY-MM-DD HH:MM` を追記する。
+5. サブタスク完了時に goal-stack を `pop` しない。goal-stack の `pop` は全体・中間ゴール解消時に main が行う。
+
 ## 実行コマンド
 
 複雑な指示をプロンプト直書きするとstdin読み込みでハングするため、指示ファイルに書いてから渡す。
 
-指示ファイルの作成は `scripts/write-input.sh <task_name>`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。作成先は `/tmp/delegate-inputs/<task_name>.md`。
+指示ファイルの作成は `scripts/write-input.sh <task_name>`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。作成先は `/tmp/<topic>/delegate-inputs/<task_name>.md` として扱う。
 
 ```bash
 bash {BASE_DIR}/scripts/write-input.sh <task> <<'EOF'
@@ -77,32 +108,32 @@ EOF
 
 ### 追加資料の選定
 
-委譲先に追加の参照資料を渡したい場合は、`amuro` スキルを使って現在のタスクに関連するガイドライン（実装/テスト設計指針など）を選定する（全件を無条件には選ばない）。amuro が自分の doc 位置を解決するので、参照先パスをこのスキル側にハードコードしない。選定したファイルの絶対パスを1行1件で `/tmp/delegate-inputs/<task>-context.txt` に書き、実行スクリプトの第4引数に渡す。委譲先には選定済み資料だけが明示される。
+委譲先に追加の参照資料を渡したい場合は、`amuro` スキルを使って現在のタスクに関連するガイドライン（実装/テスト設計指針など）を選定する（全件を無条件には選ばない）。amuro が自分の doc 位置を解決するので、参照先パスをこのスキル側にハードコードしない。選定したファイルの絶対パスを1行1件で `/tmp/<topic>/delegate-inputs/<task>-context.txt` に書き、実行スクリプトの第4引数に渡す。委譲先には選定済み資料だけが明示される。
 
 コード実装でない委譲や、関連する資料が無い場合（設定ファイルの機械的変更など）は選定ファイルを作らず、従来どおり第3引数までで実行する。
 
 実行スクリプトは、スキル起動時に示されるベースディレクトリ（"Base directory for this skill: ..."）を使って実行する。
 
-指示ファイルは使い捨てのため、スキルディレクトリ内ではなく `/tmp/delegate-inputs/` に作成する。
+指示ファイルは使い捨てのため、スキルディレクトリ内ではなく `/tmp/<topic>/delegate-inputs/` に作成する。
 
 ```bash
-mkdir -p /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] /tmp/delegate-inputs
+mkdir -p /tmp/<topic>/delegate-inputs
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/<topic>/delegate-inputs
+bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/<topic>/delegate-inputs
+bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] /tmp/<topic>/delegate-inputs
 
 # 追加資料を選定した場合
-bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/<topic>/delegate-inputs /tmp/<topic>/delegate-inputs/<task>-context.txt
+bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/<topic>/delegate-inputs /tmp/<topic>/delegate-inputs/<task>-context.txt
 ```
 
-`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/delegate-inputs/` に生成し、review agent を `claude-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-exec.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/<topic>/delegate-inputs/` に生成し、review agent を `claude-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-exec.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
 ## 指示ファイルのテンプレート
 
-`inputs/_template.md`（スキル同梱）を参照し、`/tmp/delegate-inputs/<task>.md` にコピーして使う。
+`inputs/_template.md`（スキル同梱）を参照し、`/tmp/<topic>/delegate-inputs/<task>.md` にコピーして使う。
 
 ## 失敗時の扱い
 
@@ -112,7 +143,7 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数の
 ## 例
 
 ```bash
-bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub /path/to/workdir <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD /tmp/delegate-inputs
+bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md /tmp/<topic>/delegate-inputs
+bash {BASE_DIR}/scripts/claude-exec.sh sub /path/to/workdir <task>.md /tmp/<topic>/delegate-inputs
+bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD /tmp/<topic>/delegate-inputs
 ```
