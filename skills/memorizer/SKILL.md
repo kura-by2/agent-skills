@@ -68,16 +68,11 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
 
 ### `/memorizer save [topic]`
 1. `topic` 未指定なら会話からトピック名を推定（英小文字・ハイフン区切り）。既存への追記か新規かを判断。
-2. `/tmp/<topic>/` が存在する場合は、次の3点を読み取る。存在しないファイルは「未作成」として扱う。
-   - `/tmp/<topic>/preflight.md`
-   - `/tmp/<topic>/goal-stack.md`
-   - `/tmp/<topic>/delegate-ledger.md`
-3. 現在の作業と `/tmp/<topic>/` 配下の3点を `{topic}.md` の構成に沿って要約し一時ファイルに書く。有効なルール・制約は残し、再発防止に要るルールを削らない。
-   `## 現在の状態` には全体ゴールの進行状態、`## 決定事項` には preflight で確定した意図・完了条件・検証方法、`## 次のアクション` には goal-stack の最上位アクティブゴールと delegate 台帳の未完了サブタスクを反映する。
+2. 現在の作業を `{topic}.md` の構成に沿って要約し一時ファイルに書く。有効なルール・制約は残し、再発防止に要るルールを削らない。
    ```bash
    bash {BASE_DIR}/scripts/save-context.sh <topic> <body_tmp>
    ```
-4. context-log に該当する内容（記録基準参照）があれば一時ファイルに書いて追記。無ければスキップ。
+3. context-log に該当する内容（記録基準参照）があれば一時ファイルに書いて追記。無ければスキップ。
    ```bash
    bash {BASE_DIR}/scripts/append-log.sh <topic> <text_tmp>
    ```
@@ -96,13 +91,6 @@ bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
 出力された通常のパスを Read する。depends_on は load では自動で読まない。
 フロントマターに `goal_doc:` があれば、そのファイルを**無条件で Read** してゴールとして採用する。ゴールを固定した上で `## 決定事項`・`## 次のアクション` を実行前提として採用し、その後に要約・一覧提示へ進む。
-ロードした `<topic>` について `/tmp/<topic>/` が存在する場合は、そのまま継続する。
-`/tmp/<topic>/` が存在しない場合は作成し、永続化された内容から次の3点を再構築する。
-
-- `/tmp/<topic>/preflight.md`: `{topic}.md` の `## 決定事項` に保存された意図・完了条件・検証方法をもとに作る。
-- `/tmp/<topic>/goal-stack.md`: `{topic}.md` の `## 現在の状態` と `## 次のアクション` に保存された全体ゴール・中間ゴールをもとに作る。
-- `/tmp/<topic>/delegate-ledger.md`: `{topic}.md` の `## 次のアクション` に保存された未完了サブタスクをもとに作る。未完了サブタスクがなければ空の台帳ヘッダーだけ作る。
-
 `MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。
