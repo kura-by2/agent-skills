@@ -67,42 +67,44 @@ codex は `codex debug models` を使って再取得する。claude は CLI に�
 
 複雑な指示をプロンプト直書きするとstdin読み込みでハングするため、指示ファイルに書いてから渡す。
 
-指示ファイルの作成は `scripts/write-input.sh <task_name>`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。作成先は `/tmp/delegate-inputs/<task_name>.md`。
+指示ファイルの作成は `scripts/write-input.sh <task_name> [inputs_dir]`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。作成先ディレクトリは呼び出し元が指定でき、未指定時は `/tmp/delegate-inputs/` に作成する。
 
 ```bash
-bash {BASE_DIR}/scripts/write-input.sh <task> <<'EOF'
+INPUTS_DIR=/tmp/delegate-inputs
+bash {BASE_DIR}/scripts/write-input.sh <task> "$INPUTS_DIR" <<'EOF'
 <指示本文>
 EOF
 ```
 
 ### 追加資料の選定
 
-委譲先に追加の参照資料を渡したい場合は、`amuro` スキルを使って現在のタスクに関連するガイドライン（実装/テスト設計指針など）を選定する（全件を無条件には選ばない）。amuro が自分の doc 位置を解決するので、参照先パスをこのスキル側にハードコードしない。選定したファイルの絶対パスを1行1件で `/tmp/delegate-inputs/<task>-context.txt` に書き、実行スクリプトの第4引数に渡す。委譲先には選定済み資料だけが明示される。
+委譲先に追加の参照資料を渡したい場合は、`amuro` スキルを使って現在のタスクに関連するガイドライン（実装/テスト設計指針など）を選定する（全件を無条件には選ばない）。amuro が自分の doc 位置を解決するので、参照先パスをこのスキル側にハードコードしない。選定したファイルの絶対パスを1行1件で `$INPUTS_DIR/<task>-context.txt` に書き、実行スクリプトの第4引数に渡す。委譲先には選定済み資料だけが明示される。
 
 コード実装でない委譲や、関連する資料が無い場合（設定ファイルの機械的変更など）は選定ファイルを作らず、従来どおり第3引数までで実行する。
 
 実行スクリプトは、スキル起動時に示されるベースディレクトリ（"Base directory for this skill: ..."）を使って実行する。
 
-指示ファイルは使い捨てのため、スキルディレクトリ内ではなく `/tmp/delegate-inputs/` に作成する。
+指示ファイルは使い捨てのため、スキルディレクトリ内ではなく呼び出し元が指定した inputs ディレクトリに作成する。未指定時の既定値は `/tmp/delegate-inputs/`。
 
 ```bash
-mkdir -p /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] /tmp/delegate-inputs
+INPUTS_DIR=/tmp/delegate-inputs
+mkdir -p "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] "$INPUTS_DIR"
 
 # 追加資料を選定した場合
-bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
+bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
 ```
 
-`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/delegate-inputs/` に生成し、review agent を `claude-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-exec.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを inputs ディレクトリに生成し、review agent を `claude-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-exec.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
 ## 指示ファイルのテンプレート
 
-`inputs/_template.md`（スキル同梱）を参照し、`/tmp/delegate-inputs/<task>.md` にコピーして使う。
+`inputs/_template.md`（スキル同梱）を参照し、指定した inputs ディレクトリの `<task>.md` にコピーして使う。
 
 ## 失敗時の扱い
 
@@ -112,7 +114,8 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数の
 ## 例
 
 ```bash
-bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub /path/to/workdir <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD /tmp/delegate-inputs
+INPUTS_DIR=/tmp/delegate-inputs
+bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-exec.sh sub /path/to/workdir <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD "$INPUTS_DIR"
 ```
