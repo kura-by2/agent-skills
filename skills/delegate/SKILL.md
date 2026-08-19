@@ -108,6 +108,16 @@ bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md "$INPUTS_DI
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
+## レビュー（必須）
+
+実装委譲（`codex-exec.sh` / `claude-exec.sh` によるコード編集・コミット）が完了したら、**必ず** `claude-review-exec.sh` でレビューを回す。委譲元が diff を目視しただけ、`bash -n` や構文確認をしただけでは完了にしない。
+
+- 対象 diff 範囲には、その委譲が積んだコミット範囲を明示する（例: `HEAD~1..HEAD`）。
+- レビュー結果を確認するまで、そのサブタスクを完了扱いにしない・ユーザーへ完了報告をしない。
+- 指摘が出た場合は、修正も実装委譲としてやり直し、再度レビューを回す。
+
+調査・設計など、コード編集を伴わない委譲はこの対象外。
+
 ## 指示ファイルのテンプレート
 
 `inputs/_template.md`（スキル同梱）を参照し、指定した inputs ディレクトリの `<task>.md` にコピーして使う。
