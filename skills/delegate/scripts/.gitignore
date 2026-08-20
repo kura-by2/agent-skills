@@ -5,6 +5,7 @@
 !claude-impl-exec.sh
 !claude-review-agent-exec.sh
 !claude-review-exec.sh
+!claude-review-files-exec.sh
 !codex-exec.sh
 !model-cache.sh
 !write-input.sh
