@@ -1,10 +1,10 @@
 #!/bin/bash
 # Usage: claude-exec.sh <agent> <worktree> <task_file> [inputs_dir] [selected_context_file]
-# ファンネル（調査/設計/レビュー委譲）の実行エンジン（claude 版）。
+# ファンネル（調査/設計/レビュー/実装委譲）の実行エンジン（claude 版）。
 #
 # 重要:
-#   - agent は sub または review に限定する。どちらも .claude/agents 側で
-#     Edit/Write/MultiEdit を禁止する。
+#   - agent は sub / review / impl に限定する。sub と review は .claude/agents 側で
+#     Edit/Write/MultiEdit を禁止する。impl は書き込みを許可し、検証コマンドの実行を禁止する。
 #   - cd はしない。作業対象 worktree は --add-dir で渡し、プロンプトで作業ルートを明示する。
 #     cwd は呼び出し元（プロジェクトルート）のままなので、git 操作が cwd 側リポジトリに
 #     当たらないよう、プロンプトで `git -C <worktree>` を強制する。
@@ -32,7 +32,7 @@ if [ -z "$AGENT" ] || [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
 fi
 
 case "$AGENT" in
-  sub|review)
+  sub|review|impl)
     ;;
   *)
     printf 'error: unsupported claude delegate agent: %s\n' "$AGENT" >&2

@@ -38,8 +38,11 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 起動スクリプトは作業種別で選ぶ。
 
 - 実装: `scripts/codex-exec.sh`
+- 実装（codex が使えない場合のフォールバック）: `scripts/claude-exec.sh impl`
 - その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh`
 - レビュー: `scripts/claude-review-exec.sh`
+
+実装は codex を既定とし、codex のクォータ切れ・障害で実行できない場合に限り claude の `impl` エージェントへ回す。`impl` は書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
 
 Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
 
