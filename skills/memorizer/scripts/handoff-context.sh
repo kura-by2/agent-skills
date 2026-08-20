@@ -25,7 +25,6 @@ awk '
   END {
     printf("## 現在の状態\n")
     printf("親トピック `%s` から次フェーズへ引き継いだコンテキスト。\n\n\n", parent)
-    printf("## 有効なルール・制約\n\n\n")
     printf("## 決定事項\n")
     if (decisions ~ /[^[:space:]]/) {
       printf("%s", decisions)
