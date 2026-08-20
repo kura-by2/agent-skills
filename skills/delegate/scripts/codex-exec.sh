@@ -5,6 +5,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/model-cache.sh"
 
+delegate_mark_sync_deadline_delegate() {
+  local session="${CLAUDE_CODE_SESSION_ID:-}"
+  [ -n "$session" ] || return 0
+  mkdir -p /tmp/claude-sync-deadline 2>/dev/null || return 0
+  : > "/tmp/claude-sync-deadline/$session.delegate" 2>/dev/null || true
+}
+
 WORKTREE="${1:-}"
 TASK="${2:-}"
 INPUTS_DIR="${3:-}"
@@ -14,6 +21,8 @@ if [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
   echo "Usage: codex-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]"
   exit 1
 fi
+
+delegate_mark_sync_deadline_delegate
 
 delegate_ensure_model_cache codex
 MODEL="$(delegate_model_for_task_type implementation)"

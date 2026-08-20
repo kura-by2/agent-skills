@@ -13,6 +13,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/model-cache.sh"
 
+delegate_mark_sync_deadline_delegate() {
+  local session="${CLAUDE_CODE_SESSION_ID:-}"
+  [ -n "$session" ] || return 0
+  mkdir -p /tmp/claude-sync-deadline 2>/dev/null || return 0
+  : > "/tmp/claude-sync-deadline/$session.delegate" 2>/dev/null || true
+}
+
 AGENT="${1:-}"
 WORKTREE="${2:-}"
 TASK="${3:-}"
@@ -32,6 +39,8 @@ case "$AGENT" in
     exit 1
     ;;
 esac
+
+delegate_mark_sync_deadline_delegate
 
 delegate_ensure_model_cache claude
 MODEL="$(delegate_model_for_agent "$AGENT")"
