@@ -38,13 +38,15 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 起動スクリプトは作業種別で選ぶ。
 
 - 実装: `scripts/codex-exec.sh`
-- 実装（codex が使えない場合のフォールバック）: `scripts/claude-exec.sh impl`
-- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh`
+- 実装（codex が使えない場合のフォールバック）: `scripts/claude-impl-exec.sh`
+- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-sub-exec.sh`
 - レビュー: `scripts/claude-review-exec.sh`
+
+claude の各エージェント用スクリプトは薄いラッパで、共通処理（モデル解決・追加資料の読み込み・`--add-dir` 組み立て・プロンプト生成・実行と結果出力・フォールバック提案）は `scripts/claude-common.sh` に集約する。
 
 実装は codex を既定とし、codex のクォータ切れ・障害で実行できない場合に限り claude の `impl` エージェントへ回す。`impl` は書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
 
-Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
+Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude はエージェント別スクリプト（`claude-sub-exec.sh` / `claude-impl-exec.sh` / `claude-review-agent-exec.sh`）が共通部 `claude-common.sh` 経由で `claude -p --agent <agent> --model <model>` を起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
 
 委譲 CLI が非0終了し、出力に `DELEGATE_PERMISSION_OUT_OF_SCOPE` が含まれない場合、実行スクリプトは stderr に `DELEGATE_FALLBACK_SUGGEST<TAB>failed=<model><TAB>next=<model><TAB>reason=exec_failed` を1行だけ出す。これは提案のみであり、自動リトライ・自動モデル切替・`model-tiers.tsv` の書き換えはしないため、「同じ指示での自動リトライはしない」規約と矛盾しない。
 
@@ -99,21 +101,21 @@ EOF
 INPUTS_DIR=/tmp/delegate-inputs
 mkdir -p "$INPUTS_DIR"
 bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
 bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] "$INPUTS_DIR"
 
 # 追加資料を選定した場合
 bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
 ```
 
-`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを inputs ディレクトリに生成し、review agent を `claude-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-exec.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、追跡済みファイルの未コミット変更のみをレビュー対象にする。未追跡ファイル・git 管理外ファイルはこの方法では差分に出ないため、それらのレビューには `claude-review-files-exec.sh` でファイルパスを指定する。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを inputs ディレクトリに生成し、`claude-review-agent-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-common.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、追跡済みファイルの未コミット変更のみをレビュー対象にする。未追跡ファイル・git 管理外ファイルはこの方法では差分に出ないため、それらのレビューには `claude-review-files-exec.sh` でファイルパスを指定する。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
 ## レビュー（必須）
 
-実装委譲（`codex-exec.sh` / `claude-exec.sh` によるコード編集）が完了したら、**必ず**レビューを回す。レビューを別工程として委譲せずに diff を目視しただけ、`bash -n` や構文確認をしただけでは完了にしない。
+実装委譲（`codex-exec.sh` / `claude-impl-exec.sh` によるコード編集）が完了したら、**必ず**レビューを回す。レビューを別工程として委譲せずに diff を目視しただけ、`bash -n` や構文確認をしただけでは完了にしない。
 
 - 対象には、その委譲が変更したファイルを指定する。git 管理下のファイルの場合は diff_range（コミット範囲）を渡し（例: `HEAD~1..HEAD`）、git 管理外のファイルの場合はファイルパスを指定する。レビューを回すためにコミットさせない。
 - レビュー結果を確認するまで、そのサブタスクを完了扱いにしない・ユーザーへ完了報告をしない。
@@ -135,6 +137,6 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数の
 ```bash
 INPUTS_DIR=/tmp/delegate-inputs
 bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md "$INPUTS_DIR"
-bash {BASE_DIR}/scripts/claude-exec.sh sub /path/to/workdir <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh /path/to/workdir <task>.md "$INPUTS_DIR"
 bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD "$INPUTS_DIR"
 ```

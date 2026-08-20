@@ -69,4 +69,4 @@ $FILE_LINES
 git 管理外・新規作成のファイルを含む前提のため、差分は取らず、上記ファイルの全文を読んでレビューしてください。
 EOF
 
-exec bash "$SCRIPT_DIR/claude-exec.sh" review "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
+exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"

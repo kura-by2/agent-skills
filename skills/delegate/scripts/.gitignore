@@ -1,7 +1,10 @@
 *
 !.gitignore
+!claude-common.sh
+!claude-sub-exec.sh
+!claude-impl-exec.sh
+!claude-review-agent-exec.sh
 !claude-review-exec.sh
-!claude-exec.sh
 !codex-exec.sh
 !model-cache.sh
 !write-input.sh
