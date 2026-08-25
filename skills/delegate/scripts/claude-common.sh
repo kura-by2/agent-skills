@@ -61,7 +61,6 @@ delegate_claude_exec() {
         printf 'warning: selected delegate context is not a Markdown file: %s\n' "$context_path" >&2
         continue
       fi
-      context_path="$(readlink -f "$context_path")"
       CONTEXT_PROMPT+=$'\n- '"$context_path"
       ADD_DIR_ARGS+=(--add-dir "$(dirname "$context_path")")
     done < "$SELECTED_CONTEXT_FILE"

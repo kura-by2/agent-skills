@@ -30,9 +30,6 @@ if [ -z "${FILES//[[:space:]]/}" ]; then
   exit 1
 fi
 
-WORKTREE="$(readlink -f "$WORKTREE")"
-GOAL_FILE="$(readlink -f "$GOAL_FILE")"
-
 FILE_LINES=""
 for FILE in $FILES; do
   if [[ "$FILE" = /* ]]; then
@@ -46,7 +43,6 @@ for FILE in $FILES; do
     exit 1
   fi
 
-  FILE_PATH="$(readlink -f "$FILE_PATH")"
   FILE_LINES="${FILE_LINES}${FILE_PATH}"$'\n'
 done
 

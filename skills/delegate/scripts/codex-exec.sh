@@ -48,7 +48,6 @@ if [ -n "$SELECTED_CONTEXT_FILE" ] && [ -f "$SELECTED_CONTEXT_FILE" ]; then
       printf 'warning: selected delegate context is not a Markdown file: %s\n' "$context_path" >&2
       continue
     fi
-    context_path="$(readlink -f "$context_path")"
     CONTEXT_PROMPT+=$'\n- '"$context_path"
     ADD_DIR_ARGS+=(--add-dir "$(dirname "$context_path")")
   done < "$SELECTED_CONTEXT_FILE"
@@ -92,7 +91,7 @@ delegate_maybe_emit_fallback_suggest "$MODEL" "$OUTPUT_FILE" "$RC"
 if [ "$RC" -eq 0 ] && [ "${DELEGATE_SKIP_REVIEW:-}" != "1" ] && [ -n "$PRE_HEAD" ]; then
   POST_HEAD="$(git -C "$WORKTREE" rev-parse HEAD 2>/dev/null || true)"
   if [ -n "$POST_HEAD" ] && [ "$POST_HEAD" != "$PRE_HEAD" ]; then
-    GOAL_PATH="$(readlink -f "$TASK_PATH")"
+    GOAL_PATH="$TASK_PATH"
     printf 'delegate: chaining review (%s..%s)\n' "${PRE_HEAD:0:7}" "${POST_HEAD:0:7}" >&2
     bash "$SCRIPT_DIR/claude-review-exec.sh" "$WORKTREE" "$GOAL_PATH" "$PRE_HEAD..$POST_HEAD" "${INPUTS_DIR:-/tmp/delegate-inputs}" || {
       printf 'delegate: review chain failed (implementation kept, review must be rerun)\n' >&2

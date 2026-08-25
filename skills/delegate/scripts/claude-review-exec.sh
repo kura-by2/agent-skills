@@ -25,8 +25,6 @@ if [ ! -f "$GOAL_FILE" ]; then
   exit 1
 fi
 
-WORKTREE="$(readlink -f "$WORKTREE")"
-GOAL_FILE="$(readlink -f "$GOAL_FILE")"
 mkdir -p "$INPUTS_DIR"
 
 TASK_FILE="$(mktemp "$INPUTS_DIR/review-XXXXXX.md")"
