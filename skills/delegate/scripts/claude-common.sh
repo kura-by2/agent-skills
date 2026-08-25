@@ -8,8 +8,8 @@
 #     Edit/Write/MultiEdit を禁止する。impl は書き込みを許可し、検証コマンドの実行を禁止する。
 #     エージェントの選択は呼び先スクリプトで固定し、ここでは引数で受け取るだけにする。
 #   - cd はしない。作業対象 worktree は --add-dir で渡し、プロンプトで作業ルートを明示する。
-#     cwd は呼び出し元（プロジェクトルート）のままなので、git 操作が cwd 側リポジトリに
-#     当たらないよう、プロンプトで `git -C <worktree>` を強制する。
+#     cwd は呼び出し元（プロジェクトルート）のままだが、cd 禁止と git -C の誘導は
+#     deny-cd hook が機械強制するため、プロンプトでは重複して指示しない。
 
 DELEGATE_CLAUDE_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DELEGATE_CLAUDE_COMMON_DIR/model-cache.sh"
@@ -82,7 +82,7 @@ delegate_claude_exec() {
   STDERR_FILE="$(mktemp)"
   trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' RETURN
   local RC=0
-  local PROMPT="作業対象のリポジトリは ${WORKTREE} です。${TASK_PATH} を読み、${WORKTREE} 内のファイルに対して対応してください。git 操作はすべて 'git -C ${WORKTREE} ...' で行い、それ以外のリポジトリやディレクトリには触れないこと。自分の権限範囲外の作業を求められたら固定文言 DELEGATE_PERMISSION_OUT_OF_SCOPE だけを出して終了すること。${CONTEXT_PROMPT}"
+  local PROMPT="作業対象のリポジトリは ${WORKTREE} です。${TASK_PATH} を読んで対応してください。ファイルの作成・編集・削除は ${WORKTREE}（および渡された inputs）内に限定すること。読み取り専用の参照やコマンド実行は、システム情報など ${WORKTREE} 外を対象にしても禁止しない。自分の権限範囲外の作業を求められたら固定文言 DELEGATE_PERMISSION_OUT_OF_SCOPE だけを出して終了すること。${CONTEXT_PROMPT}"
 
   if ! CLAUDE_DELEGATE_SESSION=1 claude -p "$PROMPT" \
     --agent "$AGENT" \
