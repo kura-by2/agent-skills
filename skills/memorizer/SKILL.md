@@ -109,7 +109,7 @@ bash {BASE_DIR}/scripts/depended-context.sh <topic...>
 ```bash
 bash {BASE_DIR}/scripts/list-context.sh
 ```
-出力された index.md（Markdownテーブル）をそのまま提示する。整形・要約しない。
+出力結果を Markdown 表（topic / updated / summary）に整形して提示する。行の取捨選択・要約はしない。
 
 ### `/memorizer archive [days]`
 ```bash
