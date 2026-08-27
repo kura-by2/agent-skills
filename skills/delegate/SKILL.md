@@ -33,18 +33,17 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 
 利用可能モデル一覧は `model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` のローカル固有の設定表（`.gitignore` で追跡しない）で、performance はフォールバック候補の並べ替えに使う。
 
-委譲先の `task_type` と backend / agent / 使用モデルの対応は `routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` のローカル固有の設定表（`.gitignore` で追跡しない）で、実行スクリプトはこの表から具体モデル名を直接読む。implementation の agent は空欄にする。
+委譲先の `task_type` と backend / agent / 使用モデルの対応は `routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` のローカル固有の設定表（`.gitignore` で追跡しない）で、実行スクリプトはこの表から具体モデル名を直接読む。implementation の agent は、backend が `claude` のとき `impl`、backend が `codex` のとき空欄にする（codex は agent を使わない）。
 
 起動スクリプトは作業種別で選ぶ。
 
-- 実装: `scripts/codex-exec.sh`
-- 実装（codex が使えない場合のフォールバック）: `scripts/claude-impl-exec.sh`
+- 実装: `routing.tsv` の implementation 行の backend で決める（`codex` → `scripts/codex-exec.sh` / `claude` → `scripts/claude-impl-exec.sh`）。委譲前に必ず `routing.tsv` を読み、記憶や既定の思い込みでスクリプトを選ばない。
 - その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-sub-exec.sh`
 - レビュー: `scripts/claude-review-exec.sh`
 
 claude の各エージェント用スクリプトは薄いラッパで、共通処理（モデル解決・追加資料の読み込み・`--add-dir` 組み立て・プロンプト生成・実行と結果出力・フォールバック提案）は `scripts/claude-common.sh` に集約する。
 
-実装は codex を既定とし、codex のクォータ切れ・障害で実行できない場合に限り claude の `impl` エージェントへ回す。`impl` は書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
+どの backend を使うかは `routing.tsv` が唯一の情報源。backend の切り替え（codex のクォータ切れ・障害による退避など）は `routing.tsv` の書き換えで表現し、このドキュメントに既定を書かない。claude の `impl` エージェントは書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
 
 Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude はエージェント別スクリプト（`claude-sub-exec.sh` / `claude-impl-exec.sh` / `claude-review-agent-exec.sh`）が共通部 `claude-common.sh` 経由で `claude -p --agent <agent> --model <model>` を起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
 
