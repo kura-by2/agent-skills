@@ -44,6 +44,11 @@ delegate_claude_exec() {
     TASK_PATH="$INPUTS_DIR/$TASK"
   fi
 
+  if [ ! -f "$TASK_PATH" ]; then
+    printf 'error: task file not found: %s\n' "$TASK_PATH" >&2
+    return 1
+  fi
+
   local ADD_DIR_ARGS=(--add-dir "$WORKTREE")
   if [ -n "$INPUTS_DIR" ]; then
     ADD_DIR_ARGS+=(--add-dir "$INPUTS_DIR")

@@ -32,6 +32,11 @@ if [ -n "$INPUTS_DIR" ]; then
   TASK_PATH="$INPUTS_DIR/$TASK"
 fi
 
+if [ ! -f "$TASK_PATH" ]; then
+  printf 'error: task file not found: %s\n' "$TASK_PATH" >&2
+  exit 1
+fi
+
 ADD_DIR_ARGS=()
 if [ -n "$INPUTS_DIR" ]; then
   ADD_DIR_ARGS+=(--add-dir "$INPUTS_DIR")
