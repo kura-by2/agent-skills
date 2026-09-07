@@ -47,7 +47,6 @@ delegate_refresh_codex_model_cache() {
         models: [
           .models[]
           | select(.visibility == "list")
-          | .slug
         ]
       }
     ' "$raw_file" > "$tmp_file"; then
@@ -248,7 +247,7 @@ delegate_warn_model_tier_drift() {
   listed_models="$(mktemp)"
   tier_models="$(mktemp)"
 
-  if ! jq -r '.models[]' "$cache_file" | sort -u > "$listed_models"; then
+  if ! jq -r '.models[] | if type == "string" then . else .slug end' "$cache_file" | sort -u > "$listed_models"; then
     printf 'warning: delegate model cache is unreadable for backend %s: %s\n' "$backend" "$cache_file" >&2
     rm -f "$listed_models" "$tier_models"
     return 0
@@ -273,6 +272,128 @@ delegate_warn_model_tier_drift() {
   rm -f "$listed_models" "$tier_models"
 }
 
+delegate_report_model_tier_guidance() {
+  local backend cache_file skill_dir tier_file listed_models tier_models difference_models
+  local catalog_order tier_order
+
+  skill_dir="$(delegate_model_cache_skill_dir)"
+  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
+
+  if [ ! -f "$tier_file" ]; then
+    printf 'error: delegate model performance table is missing: %s\n' "$tier_file" >&2
+    return 1
+  fi
+
+  for backend in codex claude; do
+    cache_file="$(delegate_model_cache_file_for_backend "$backend")"
+    printf '=== %s model tier guidance ===\n' "$backend"
+
+    if [ ! -f "$cache_file" ]; then
+      printf 'catalog: unavailable (cache missing: %s)\n\n' "$cache_file"
+      continue
+    fi
+
+    listed_models="$(mktemp)"
+    tier_models="$(mktemp)"
+    difference_models="$(mktemp)"
+    delegate_model_table_for_backend "$backend" desc | cut -f1 | sort -u > "$tier_models"
+
+    if [ "$backend" = "codex" ]; then
+      if ! jq -r '
+          .models[]
+          | select(
+              type == "string"
+              or (.upgrade.retirement_at == null)
+              or (((.upgrade.retirement_at | fromdateiso8601?) // 0) > now)
+            )
+          | if type == "string" then . else .slug end
+        ' "$cache_file" | sort -u > "$listed_models"; then
+        printf 'catalog: unavailable (cache is unreadable)\n\n'
+        rm -f "$listed_models" "$tier_models" "$difference_models"
+        continue
+      fi
+
+      printf '%s\n' '-- available catalog models --'
+      jq -r '
+        .models[]
+        | select(
+            type == "string"
+            or (.upgrade.retirement_at == null)
+            or (((.upgrade.retirement_at | fromdateiso8601?) // 0) > now)
+          )
+        | if type == "string" then
+            "id: \(.)\n  details: unavailable (legacy cache format)"
+          else
+            "id: \(.slug)\n"
+            + "  display_name: \(.display_name // "unavailable")\n"
+            + "  priority: \((.priority // "unavailable") | tostring)\n"
+            + "  description: \(.description // "unavailable")\n"
+            + "  default_reasoning_level: \(.default_reasoning_level // "unavailable")\n"
+            + "  supported_reasoning_levels: \((.supported_reasoning_levels // "unavailable") | if type == "array" then map(if type == "object" then (.effort // .reasoning_level // tostring) else tostring end) | join(", ") else tostring end)\n"
+            + "  retirement_at: \(.upgrade.retirement_at // "none")\n"
+            + "  migration_target: \(.upgrade.model // .upgrade.target_model // .upgrade.replacement_model // "none")\n"
+            + "  migration_message: \(.upgrade.message // "none")"
+          end
+      ' "$cache_file"
+    else
+      printf '%s\n' '-- available catalog models --'
+      printf 'The official docs cache is unstructured Markdown; a complete model list and catalog metadata cannot be determined reliably.\n'
+      printf 'Tier-table models found in the current docs:\n'
+      while IFS= read -r model || [ -n "$model" ]; do
+        [ -n "$model" ] || continue
+        if grep -Fq "$model" "$cache_file"; then
+          printf 'id: %s\n  details: unavailable from structured catalog data\n' "$model"
+          printf '%s\n' "$model" >> "$listed_models"
+        fi
+      done < "$tier_models"
+    fi
+
+    printf '%s\n' '-- differences from model-tiers.tsv --'
+    printf '%s\n' 'Unclassified (catalog only):'
+    comm -23 "$listed_models" "$tier_models" > "$difference_models"
+    if [ "$backend" = "claude" ]; then
+      printf '  unavailable: the Markdown cache cannot provide a complete catalog list\n'
+    elif [ -s "$difference_models" ]; then
+      sed 's/^/  /' "$difference_models"
+    else
+      printf '  none\n'
+    fi
+
+    printf '%s\n' 'Retirement candidates (tier table only):'
+    comm -13 "$listed_models" "$tier_models" > "$difference_models"
+    if [ -s "$difference_models" ]; then
+      sed 's/^/  /' "$difference_models"
+    else
+      printf '  none\n'
+    fi
+
+    printf '%s\n' 'Order contradictions:'
+    if [ "$backend" = "codex" ]; then
+      catalog_order="$(jq -r '
+        [.models[]
+          | select(type == "object" and (.priority | type == "number"))
+          | select((.upgrade.retirement_at == null) or (((.upgrade.retirement_at | fromdateiso8601?) // 0) > now))]
+        | sort_by(.priority)
+        | .[].slug
+      ' "$cache_file" | while IFS= read -r model; do grep -Fxq "$model" "$tier_models" && printf '%s\n' "$model"; done)"
+      tier_order="$(delegate_model_table_for_backend codex desc | cut -f1 | while IFS= read -r model; do grep -Fxq "$model" "$listed_models" && printf '%s\n' "$model"; done)"
+      if [ -z "$catalog_order" ]; then
+        printf '  unavailable: catalog priority values are absent\n'
+      elif [ "$catalog_order" = "$tier_order" ]; then
+        printf '  none\n'
+      else
+        printf '  catalog priority order: %s\n' "$(printf '%s\n' "$catalog_order" | paste -sd '>' - | sed 's/>/ > /g')"
+        printf '  tier performance order: %s\n' "$(printf '%s\n' "$tier_order" | paste -sd '>' - | sed 's/>/ > /g')"
+      fi
+    else
+      printf '  unavailable: the Markdown cache has no structured priority values\n'
+    fi
+
+    printf '\n'
+    rm -f "$listed_models" "$tier_models" "$difference_models"
+  done
+}
+
 delegate_model_is_available() {
   local backend="$1"
   local model="$2"
@@ -280,7 +401,19 @@ delegate_model_is_available() {
 
   case "$backend" in
     codex)
-      jq -e --arg model "$model" 'any(.models[]; . == $model)' "$cache_file" >/dev/null 2>&1
+      jq -e --arg model "$model" '
+        any(.models[];
+          if type == "string" then
+            . == $model
+          else
+            .slug == $model
+            and (
+              .upgrade.retirement_at == null
+              or (((.upgrade.retirement_at | fromdateiso8601?) // 0) > now)
+            )
+          end
+        )
+      ' "$cache_file" >/dev/null 2>&1
       ;;
     claude)
       grep -Fq "$model" "$cache_file"

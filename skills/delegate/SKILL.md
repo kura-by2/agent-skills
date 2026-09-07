@@ -51,15 +51,20 @@ Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context デ
 
 ### モデル階層とキャッシュ
 
-委譲先モデルの性能順は `model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` のローカル固有の設定表（`.gitignore` で追跡しない）で、性能値が大きいほど高性能。実行スクリプトはこの表を書き換えない。主選定は `routing.tsv` の具体モデル名を使い、`model-tiers.tsv` はフォールバック候補の並べ替えに使う。
+`routing.tsv` は主選定の表で、task type ごとの backend / agent / 具体モデル名を持つ。通常の委譲ではこの表のモデルをそのまま使う。`model-tiers.tsv` はフォールバックの並べ替え専用で、`backend<TAB>model<TAB>performance` を持ち、performance が大きいほど高性能と判断する。どちらもローカル固有の設定表であり、`.gitignore` で追跡しない。
 
-モデル確認用キャッシュは `.model-cache/<backend>-models.json` に週次保存する。このキャッシュは生成物なので git 追跡しない。実行スクリプトの冒頭で、キャッシュの mtime の ISO 週が今週ならそのまま委譲し、キャッシュ不在または週が変わっている場合だけ正規手段で再取得する。
+モデル確認用キャッシュは、各 backend の正規な一覧取得元に現在のモデルが存在するか、退役済みでないかを判定するための生成物である。`.model-cache/<backend>-models.json` に週次保存し、git 追跡しない。実行スクリプトの冒頭でキャッシュの mtime の ISO 週が今週ならそのまま使い、キャッシュ不在または週が変わった場合だけ再取得する。退役日時が未来のモデルは利用可能なまま退役情報を可視化し、退役日時を過ぎたモデルは利用可能と扱わない。
 
-codex は `codex debug models` を使って再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、既存の週次判定用キャッシュファイルに本文をそのまま保存する。
+codex は `codex debug models` を使って、表示名、優先度、説明、対応する推論レベル、退役情報を含む一覧を再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、本文をそのまま保存する。
 
-再取得後のキャッシュ内容と `model-tiers.tsv` の照合、警告、続行可否の詳細は `scripts/model-cache.sh` に実装を集約する。
+`delegate_report_model_tier_guidance` は両 backend のキャッシュから、モデルの判断材料と `model-tiers.tsv` に対する未分類・退役候補・順序の矛盾を標準出力へ整形する。claude の Markdown から構造的に取得できない項目は、その旨を表示する。この出力を読んで性能序列を判断し、必要なときに `model-tiers.tsv` を更新するのは委譲元のエージェントである。スクリプトは性能を決めず、`model-tiers.tsv` を書き換えない。
 
-モデル一覧または claude 公式 docs Markdown の取得に失敗した場合、古いキャッシュが存在すればその日付を警告1行で出して続行する（廃止モデル指定の失敗は exec 失敗として `DELEGATE_FALLBACK_SUGGEST` で可視化される）。キャッシュが1つも無い場合のみ fail-closed とし委譲を実行しない。
+取得失敗時は次のように扱う。
+
+- 古いキャッシュがある場合: その日付を警告1行で出し、古いキャッシュを使って続行する。
+- キャッシュが1つも無い場合: fail-closed とし、委譲を実行しない。
+
+キャッシュとの照合、警告、続行可否、判断材料の出力は `scripts/model-cache.sh` に集約する。
 
 ## 渡すべき情報
 
