@@ -8,4 +8,5 @@
 !claude-review-files-exec.sh
 !codex-exec.sh
 !model-cache.sh
+!model-tier-guidance.sh
 !write-input.sh

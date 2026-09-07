@@ -274,7 +274,20 @@ delegate_warn_model_tier_drift() {
 
 delegate_report_model_tier_guidance() {
   local backend cache_file skill_dir tier_file listed_models tier_models difference_models
-  local catalog_order tier_order
+  local catalog_order tier_order backends
+
+  case "${1:-}" in
+    "")
+      backends="codex claude"
+      ;;
+    codex|claude)
+      backends="$1"
+      ;;
+    *)
+      printf 'error: unsupported delegate backend for model tier guidance: %s\n' "$1" >&2
+      return 1
+      ;;
+  esac
 
   skill_dir="$(delegate_model_cache_skill_dir)"
   tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
@@ -284,7 +297,7 @@ delegate_report_model_tier_guidance() {
     return 1
   fi
 
-  for backend in codex claude; do
+  for backend in $backends; do
     cache_file="$(delegate_model_cache_file_for_backend "$backend")"
     printf '=== %s model tier guidance ===\n' "$backend"
 

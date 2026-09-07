@@ -57,7 +57,9 @@ Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context デ
 
 codex は `codex debug models` を使って、表示名、優先度、説明、対応する推論レベル、退役情報を含む一覧を再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、本文をそのまま保存する。
 
-`delegate_report_model_tier_guidance` は両 backend のキャッシュから、モデルの判断材料と `model-tiers.tsv` に対する未分類・退役候補・順序の矛盾を標準出力へ整形する。claude の Markdown から構造的に取得できない項目は、その旨を表示する。この出力を読んで性能序列を判断し、必要なときに `model-tiers.tsv` を更新するのは委譲元のエージェントである。スクリプトは性能を決めず、`model-tiers.tsv` を書き換えない。
+`delegate_report_model_tier_guidance` は対象 backend のキャッシュから、モデルの判断材料と `model-tiers.tsv` に対する未分類・退役候補・順序の矛盾を標準出力へ整形する。backend を指定しなければ両方を対象にする。claude の Markdown から構造的に取得できない項目は、その旨を表示する。この出力を読んで性能序列を判断し、必要なときに `model-tiers.tsv` を更新するのは委譲元のエージェントである。スクリプトは性能を決めず、`model-tiers.tsv` を書き換えない。
+
+判断材料は `bash {BASE_DIR}/scripts/model-tier-guidance.sh [codex|claude]` で出力する。backend を省略すると両方を出力する。キャッシュが今週分でなければ既存の鮮度判定に従って再取得を試みる。出力を読んで `model-tiers.tsv` を更新する担当は委譲元のエージェントであり、このスクリプト自身は更新しない。
 
 取得失敗時は次のように扱う。
 
