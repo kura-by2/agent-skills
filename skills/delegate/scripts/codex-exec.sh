@@ -97,11 +97,15 @@ if [ "$RC" -eq 0 ] && [ "${DELEGATE_SKIP_REVIEW:-}" != "1" ] && [ -n "$PRE_HEAD"
   POST_HEAD="$(git -C "$WORKTREE" rev-parse HEAD 2>/dev/null || true)"
   if [ -n "$POST_HEAD" ] && [ "$POST_HEAD" != "$PRE_HEAD" ]; then
     GOAL_PATH="$TASK_PATH"
-    printf 'delegate: chaining review (%s..%s)\n' "${PRE_HEAD:0:7}" "${POST_HEAD:0:7}" >&2
-    bash "$SCRIPT_DIR/claude-review-exec.sh" "$WORKTREE" "$GOAL_PATH" "$PRE_HEAD..$POST_HEAD" "${INPUTS_DIR:-/tmp/delegate-inputs}" || {
-      printf 'delegate: review chain failed (implementation kept, review must be rerun)\n' >&2
-      exit 1
-    }
+    if [ -s /tmp/claude-active-topic ]; then
+      printf 'DELEGATE_REVIEW_RANGE\t%s\t%s..%s\n' "$WORKTREE" "$PRE_HEAD" "$POST_HEAD"
+    else
+      printf 'delegate: chaining review (%s..%s)\n' "${PRE_HEAD:0:7}" "${POST_HEAD:0:7}" >&2
+      bash "$SCRIPT_DIR/claude-review-exec.sh" "$WORKTREE" "$GOAL_PATH" "$PRE_HEAD..$POST_HEAD" "${INPUTS_DIR:-/tmp/delegate-inputs}" || {
+        printf 'delegate: review chain failed (implementation kept, review must be rerun)\n' >&2
+        exit 1
+      }
+    fi
   else
     printf 'delegate: no new commits, review chain skipped\n' >&2
   fi
