@@ -108,14 +108,14 @@ INPUTS_DIR=/tmp/delegate-inputs
 mkdir -p "$INPUTS_DIR"
 bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
 bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
-bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal1> <diff1> [<goal2> <diff2> ...] --inputs-dir "$INPUTS_DIR"
 
 # 追加資料を選定した場合
 bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
 bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
 ```
 
-`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを inputs ディレクトリに生成し、`claude-review-agent-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-common.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、追跡済みファイルの未コミット変更のみをレビュー対象にする。未追跡ファイル・git 管理外ファイルはこの方法では差分に出ないため、それらのレビューには `claude-review-files-exec.sh` でファイルパスを指定する。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は同一 worktree の `<goal_file> <diff_range>` 対を1組以上受け取り、対ごとの goal とレビュー対象 diff 範囲から review エージェント用の指示ファイルを inputs ディレクトリに生成し、`claude-review-agent-exec.sh` に渡す。inputs ディレクトリは末尾の `--inputs-dir <dir>` で指定する。従来の単一ペアに限り、第4引数の inputs ディレクトリ指定と `diff_range` 省略時の `HEAD` も引き続き使える。使用モデルは `routing.tsv` の review 行から `claude-common.sh` が読む。`HEAD` は追跡済みファイルの未コミット変更のみをレビュー対象にする。未追跡ファイル・git 管理外ファイルはこの方法では差分に出ないため、それらのレビューには `claude-review-files-exec.sh` でファイルパスを指定する。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
@@ -145,5 +145,5 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数の
 INPUTS_DIR=/tmp/delegate-inputs
 bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md "$INPUTS_DIR"
 bash {BASE_DIR}/scripts/claude-sub-exec.sh /path/to/workdir <task>.md "$INPUTS_DIR"
-bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal-1.md main..HEAD /path/to/goal-2.md HEAD~3..HEAD --inputs-dir "$INPUTS_DIR"
 ```
