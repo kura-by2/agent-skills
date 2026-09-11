@@ -25,6 +25,8 @@ description: >
 ✓ auth-session-storage     ← セッション保存方式
 ```
 
+保存対象はそのトピック自身の設計・決定・次アクションだけ。トピックに固有でない Claude の行動ルールは `/feedback` → `/persist-check` へ、経緯の記録は context-log の基準に従う。
+
 ## {topic}.md の構成
 
 LLM が内容を埋めるセクション。各セクション最大5項目。
@@ -35,12 +37,12 @@ topic: {topic}
 updated: {date}
 depends_on:       # 省略可。depended で補足読みされる
   - {topic-a}
-goal_doc:         # 省略可。このトピックの不変ゴール・計画書の絶対パス。load 時に無条件で Read する。
+goal_doc:         # 省略可。このトピックの不変ゴール・計画書の絶対パス。load 時に無条件で Read する。/tmp 等タスク終了で消える場所は不可（要点は本文へ写す）。
   /absolute/path/to/plan.md
 ---
 
 ## 現在の状態      # 1〜3行。index の summary はここの最初の非空行
-## 決定事項        # 現在も有効な制約・行動ルールもここに集約する
+## 決定事項        # 現在も有効な制約・このトピック固有の行動ルールもここに集約する
 ## 次のアクション
 ```
 
