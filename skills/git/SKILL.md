@@ -53,12 +53,14 @@ bash <base_dir>/scripts/untracked.sh [dir]
 
 `child` を `parent` にrebaseする。`child` 省略時はカレントブランチ。
 
-### 手順
+```bash
+bash <base_dir>/scripts/rebase.sh <parent> [child]
+```
 
-1. 子ブランチのworktreeで `git rebase <parent>` を実行
-2. コンフリクト発生時は `git rebase --abort` して**ユーザーに報告して終了**する
-   - コンフリクトしたファイル一覧と概要を報告する
-   - 自己判断での解決をしない
+- `git rebase` の直接実行は hook（`git-guard.sh`）で deny されるため、必ずこのスクリプト経由で行う
+- コンフリクト発生時はスクリプトが `--abort` して exit 2 で終了する。**ユーザーに報告して終了**する
+  - コンフリクトしたファイル一覧（stderr に出る）と概要を報告する
+  - 自己判断での解決をしない
 
 ### worktreeの場所
 
