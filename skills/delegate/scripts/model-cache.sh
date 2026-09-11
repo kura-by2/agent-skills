@@ -118,7 +118,7 @@ delegate_routing_file() {
   local skill_dir
 
   skill_dir="$(delegate_model_cache_skill_dir)"
-  printf '%s\n' "${DELEGATE_ROUTING_FILE:-$skill_dir/routing.tsv}"
+  printf '%s\n' "${DELEGATE_ROUTING_FILE:-$skill_dir/state/routing.tsv}"
 }
 
 delegate_model_for_route() {
@@ -185,7 +185,7 @@ delegate_model_cache_file_for_backend() {
   local skill_dir cache_dir
 
   skill_dir="$(delegate_model_cache_skill_dir)"
-  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/.model-cache}"
+  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/state/.model-cache}"
   printf '%s/%s-models.json\n' "$cache_dir" "$backend"
 }
 
@@ -195,7 +195,7 @@ delegate_model_table_for_backend() {
   local skill_dir tier_file
 
   skill_dir="$(delegate_model_cache_skill_dir)"
-  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
+  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/state/model-tiers.tsv}"
 
   if [ ! -f "$tier_file" ]; then
     printf 'error: delegate model performance table is missing: %s\n' "$tier_file" >&2
@@ -222,7 +222,7 @@ delegate_warn_model_tier_drift() {
   local skill_dir tier_file listed_models tier_models
 
   skill_dir="$(delegate_model_cache_skill_dir)"
-  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
+  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/state/model-tiers.tsv}"
 
   if [ ! -f "$tier_file" ]; then
     printf 'warning: delegate model performance table is missing: %s\n' "$tier_file" >&2
@@ -290,7 +290,7 @@ delegate_report_model_tier_guidance() {
   esac
 
   skill_dir="$(delegate_model_cache_skill_dir)"
-  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/model-tiers.tsv}"
+  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/state/model-tiers.tsv}"
 
   if [ ! -f "$tier_file" ]; then
     printf 'error: delegate model performance table is missing: %s\n' "$tier_file" >&2
@@ -532,7 +532,7 @@ delegate_ensure_model_cache() {
   local skill_dir cache_dir cache_file
 
   skill_dir="$(delegate_model_cache_skill_dir)"
-  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/.model-cache}"
+  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/state/.model-cache}"
   cache_file="$cache_dir/${backend}-models.json"
 
   if delegate_model_cache_is_current "$cache_file"; then
