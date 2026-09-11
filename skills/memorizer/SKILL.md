@@ -40,12 +40,11 @@ goal_doc:         # 省略可。このトピックの不変ゴール・計画書
 ---
 
 ## 現在の状態      # 1〜3行。index の summary はここの最初の非空行
-## 有効なルール・制約
-## 決定事項
+## 決定事項        # 現在も有効な制約・行動ルールもここに集約する
 ## 次のアクション
 ```
 
-完結した決定・古い経緯は context-log に移す。ただし現在も有効なルール・制約はサマリーから消さない。
+完結した決定・古い経緯は context-log に移す。ただし現在も有効な制約は `## 決定事項` から消さない。
 
 ## context-log に記録する基準
 
@@ -68,7 +67,7 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
 
 ### `/memorizer save [topic]`
 1. `topic` 未指定なら会話からトピック名を推定（英小文字・ハイフン区切り）。既存への追記か新規かを判断。
-2. 現在の作業を `{topic}.md` の構成に沿って要約し一時ファイルに書く。有効なルール・制約は残し、再発防止に要るルールを削らない。
+2. 現在の作業を `{topic}.md` の構成に沿って要約し一時ファイルに書く。有効な制約も `## 決定事項` に含めて残し、再発防止に要るルールを削らない。既存トピックに旧「制約」節が残っていれば、その内容を `## 決定事項` へ寄せて節ごと畳む。
    ```bash
    bash {BASE_DIR}/scripts/save-context.sh <topic> <body_tmp>
    ```
@@ -110,7 +109,7 @@ bash {BASE_DIR}/scripts/depended-context.sh <topic...>
 ```bash
 bash {BASE_DIR}/scripts/list-context.sh
 ```
-出力された index.md（Markdownテーブル）をそのまま提示する。整形・要約しない。
+出力結果を Markdown 表（topic / updated / summary）に整形して提示する。行の取捨選択・要約はしない。
 
 ### `/memorizer archive [days]`
 ```bash

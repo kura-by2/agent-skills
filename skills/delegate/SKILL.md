@@ -13,9 +13,15 @@ delegate の役割は、作業場所を指定し、その作業を非同期に�
 
 ## 委譲のスコープ
 
-実装を委譲する場合、委譲先に依頼するのは **コード編集とコミットのみ**。テスト実行・rubocop / lint・アプリ起動・動作検証など、コード編集以外のツール実行を委譲先にさせない（検証は委譲元／別工程の責務）。
+git 管理下の実装を委譲する場合、委譲先に依頼するのは **コード編集とコミットのみ**。テスト実行・rubocop / lint・アプリ起動・動作検証など、コード編集以外のツール実行を委譲先にさせない（検証は別工程として委譲する）。git 管理外の作業文書・計画書の編集を委譲する場合は、コミットを完了条件にせず、変更内容の報告で完了とする。
 
 指示ファイル（テンプレ・手書き問わず）に「テストが通る」「検収に耐える」等、検証・検収を示唆する文言を入れない。これらは委譲先が環境外の迂回実行に走る誘因になり、その失敗報告はシグナルとして信用できない。品質は静的な性質（可読性・保守性・既存の設計/命名/作法との一貫性）で表現する。
+
+## 委譲の粒度
+
+1委譲は1関心事に絞る。独立して完結・検証できる最小単位に分割し、複数の関心事（撤去＋新設、複数スキルの改修など）を1つの指示ファイルに混ぜない。
+
+複数の関心事を並列に進める場合は、関心事ごとに指示ファイルを分けて並列投入する。1リポジトリは1委譲として扱い、複数リポジトリをまたぐ作業はリポジトリごとに分ける。
 
 ## 使い方
 
@@ -25,31 +31,42 @@ delegate の役割は、作業場所を指定し、その作業を非同期に�
 
 ## バックエンド
 
-利用可能モデル一覧は `model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` の git 管理表で、performance はフォールバック候補の並べ替えに使う。
+利用可能モデル一覧は `state/model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` のローカル固有の設定表（`.gitignore` で追跡しない）で、performance はフォールバック候補の並べ替えに使う。
 
-委譲先の `task_type` と backend / agent / 使用モデルの対応は `routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` の git 管理表で、実行スクリプトはこの表から具体モデル名を直接読む。implementation の agent は空欄にする。
+委譲先の `task_type` と backend / agent / 使用モデルの対応は `state/routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` のローカル固有の設定表（`.gitignore` で追跡しない）で、実行スクリプトはこの表から具体モデル名を直接読む。implementation の agent は、backend が `claude` のとき `impl`、backend が `codex` のとき空欄にする（codex は agent を使わない）。
 
 起動スクリプトは作業種別で選ぶ。
 
-- 実装: `scripts/codex-exec.sh`
-- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-exec.sh`
+- 実装: `state/routing.tsv` の implementation 行の backend で決める（`codex` → `scripts/codex-exec.sh` / `claude` → `scripts/claude-impl-exec.sh`）。委譲前に必ず `state/routing.tsv` を読み、記憶や既定の思い込みでスクリプトを選ばない。
+- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-sub-exec.sh`
 - レビュー: `scripts/claude-review-exec.sh`
 
-Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude は `claude -p --agent <agent> --model <model>` で起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
+claude の各エージェント用スクリプトは薄いラッパで、共通処理（モデル解決・追加資料の読み込み・`--add-dir` 組み立て・プロンプト生成・実行と結果出力・フォールバック提案）は `scripts/claude-common.sh` に集約する。
 
-委譲 CLI が非0終了し、出力に `DELEGATE_PERMISSION_OUT_OF_SCOPE` が含まれない場合、実行スクリプトは stderr に `DELEGATE_FALLBACK_SUGGEST<TAB>failed=<model><TAB>next=<model><TAB>reason=exec_failed` を1行だけ出す。これは提案のみであり、自動リトライ・自動モデル切替・`model-tiers.tsv` の書き換えはしないため、「同じ指示での自動リトライはしない」規約と矛盾しない。
+どの backend を使うかは `state/routing.tsv` が唯一の情報源。backend の切り替え（codex のクォータ切れ・障害による退避など）は `state/routing.tsv` の書き換えで表現し、このドキュメントに既定を書かない。claude の `impl` エージェントは書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
+
+Codex は `codex exec -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude はエージェント別スクリプト（`claude-sub-exec.sh` / `claude-impl-exec.sh` / `claude-review-agent-exec.sh`）が共通部 `claude-common.sh` 経由で `claude -p --agent <agent> --model <model>` を起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
+
+委譲 CLI が非0終了し、出力に `DELEGATE_PERMISSION_OUT_OF_SCOPE` が含まれない場合、実行スクリプトは stderr に `DELEGATE_FALLBACK_SUGGEST<TAB>failed=<model><TAB>next=<model><TAB>reason=exec_failed` を1行だけ出す。これは提案のみであり、自動リトライ・自動モデル切替・`state/model-tiers.tsv` の書き換えはしないため、「同じ指示での自動リトライはしない」規約と矛盾しない。
 
 ### モデル階層とキャッシュ
 
-委譲先モデルの性能順は `model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` の git 管理表で、性能値が大きいほど高性能。実行スクリプトはこの表を書き換えない。主選定は `routing.tsv` の具体モデル名を使い、`model-tiers.tsv` はフォールバック候補の並べ替えに使う。
+`state/routing.tsv` は主選定の表で、task type ごとの backend / agent / 具体モデル名を持つ。通常の委譲ではこの表のモデルをそのまま使う。`state/model-tiers.tsv` はフォールバックの並べ替え専用で、`backend<TAB>model<TAB>performance` を持ち、performance が大きいほど高性能と判断する。どちらもローカル固有の設定表であり、`.gitignore` で追跡しない。
 
-モデル確認用キャッシュは `.model-cache/<backend>-models.json` に週次保存する。このキャッシュは生成物なので git 追跡しない。実行スクリプトの冒頭で、キャッシュの mtime の ISO 週が今週ならそのまま委譲し、キャッシュ不在または週が変わっている場合だけ正規手段で再取得する。
+モデル確認用キャッシュは、各 backend の正規な一覧取得元に現在のモデルが存在するか、退役済みでないかを判定するための生成物である。`state/.model-cache/<backend>-models.json` に週次保存し、git 追跡しない。実行スクリプトの冒頭でキャッシュの mtime の ISO 週が今週ならそのまま使い、キャッシュ不在または週が変わった場合だけ再取得する。退役日時が未来のモデルは利用可能なまま退役情報を可視化し、退役日時を過ぎたモデルは利用可能と扱わない。
 
-codex は `codex debug models` を使って再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、既存の週次判定用キャッシュファイルに本文をそのまま保存する。
+codex は `codex debug models` を使って、表示名、優先度、説明、対応する推論レベル、退役情報を含む一覧を再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、本文をそのまま保存する。
 
-再取得後のキャッシュ内容と `model-tiers.tsv` の照合、警告、続行可否の詳細は `scripts/model-cache.sh` に実装を集約する。
+`delegate_report_model_tier_guidance` は対象 backend のキャッシュから、モデルの判断材料と `state/model-tiers.tsv` に対する未分類・退役候補・順序の矛盾を標準出力へ整形する。backend を指定しなければ両方を対象にする。claude の Markdown から構造的に取得できない項目は、その旨を表示する。この出力を読んで性能序列を判断し、必要なときに `state/model-tiers.tsv` を更新するのは委譲元のエージェントである。スクリプトは性能を決めず、`state/model-tiers.tsv` を書き換えない。
 
-モデル一覧または claude 公式 docs Markdown の取得に失敗した場合、古いキャッシュが存在すればその日付を警告1行で出して続行する（廃止モデル指定の失敗は exec 失敗として `DELEGATE_FALLBACK_SUGGEST` で可視化される）。キャッシュが1つも無い場合のみ fail-closed とし委譲を実行しない。
+判断材料は `bash {BASE_DIR}/scripts/model-tier-guidance.sh [codex|claude]` で出力する。backend を省略すると両方を出力する。キャッシュが今週分でなければ既存の鮮度判定に従って再取得を試みる。出力を読んで `state/model-tiers.tsv` を更新する担当は委譲元のエージェントであり、このスクリプト自身は更新しない。
+
+取得失敗時は次のように扱う。
+
+- 古いキャッシュがある場合: その日付を警告1行で出し、古いキャッシュを使って続行する。
+- キャッシュが1つも無い場合: fail-closed とし、委譲を実行しない。
+
+キャッシュとの照合、警告、続行可否、判断材料の出力は `scripts/model-cache.sh` に集約する。
 
 ## 渡すべき情報
 
@@ -67,52 +84,68 @@ codex は `codex debug models` を使って再取得する。claude は CLI に�
 
 複雑な指示をプロンプト直書きするとstdin読み込みでハングするため、指示ファイルに書いてから渡す。
 
-指示ファイルの作成は `scripts/write-input.sh <task_name>`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。作成先は `/tmp/delegate-inputs/<task_name>.md`。
+指示ファイルの作成は `scripts/write-input.sh <task_name> [inputs_dir]`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。作成先ディレクトリは呼び出し元が指定でき、未指定時は `/tmp/delegate-inputs/` に作成する。
 
 ```bash
-bash {BASE_DIR}/scripts/write-input.sh <task> <<'EOF'
+INPUTS_DIR=/tmp/delegate-inputs
+bash {BASE_DIR}/scripts/write-input.sh <task> "$INPUTS_DIR" <<'EOF'
 <指示本文>
 EOF
 ```
 
 ### 追加資料の選定
 
-委譲先に追加の参照資料を渡したい場合は、`amuro` スキルを使って現在のタスクに関連するガイドライン（実装/テスト設計指針など）を選定する（全件を無条件には選ばない）。amuro が自分の doc 位置を解決するので、参照先パスをこのスキル側にハードコードしない。選定したファイルの絶対パスを1行1件で `/tmp/delegate-inputs/<task>-context.txt` に書き、実行スクリプトの第4引数に渡す。委譲先には選定済み資料だけが明示される。
+委譲先に追加の参照資料を渡したい場合は、`amuro` スキルを使って現在のタスクに関連するガイドライン（実装/テスト設計指針など）を選定する（全件を無条件には選ばない）。amuro が自分の doc 位置を解決するので、参照先パスをこのスキル側にハードコードしない。選定したファイルの絶対パスを1行1件で `$INPUTS_DIR/<task>-context.txt` に書き、実行スクリプトの第4引数に渡す。委譲先には選定済み資料だけが明示される。
 
 コード実装でない委譲や、関連する資料が無い場合（設定ファイルの機械的変更など）は選定ファイルを作らず、従来どおり第3引数までで実行する。
 
 実行スクリプトは、スキル起動時に示されるベースディレクトリ（"Base directory for this skill: ..."）を使って実行する。
 
-指示ファイルは使い捨てのため、スキルディレクトリ内ではなく `/tmp/delegate-inputs/` に作成する。
+指示ファイルは使い捨てのため、スキルディレクトリ内ではなく呼び出し元が指定した inputs ディレクトリに作成する。未指定時の既定値は `/tmp/delegate-inputs/`。
 
 ```bash
-mkdir -p /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal_file> [diff_range] /tmp/delegate-inputs
+INPUTS_DIR=/tmp/delegate-inputs
+mkdir -p "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-review-exec.sh <work_dir_path> <goal1> <diff1> [<goal2> <diff2> ...] --inputs-dir "$INPUTS_DIR"
 
 # 追加資料を選定した場合
-bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
-bash {BASE_DIR}/scripts/claude-exec.sh sub <work_dir_path> <task>.md /tmp/delegate-inputs /tmp/delegate-inputs/<task>-context.txt
+bash {BASE_DIR}/scripts/codex-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
 ```
 
-`claude-review-exec.sh` は `<goal_file>` とレビュー対象 diff 範囲から review エージェント用の指示ファイルを `/tmp/delegate-inputs/` に生成し、review agent を `claude-exec.sh` に渡す。使用モデルは `routing.tsv` の review 行から `claude-exec.sh` が読む。`diff_range` を省略した場合は `HEAD` を使い、未コミット差分をレビュー対象にする。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は同一 worktree の `<goal_file> <diff_range>` 対を1組以上受け取り、対ごとの goal とレビュー対象 diff 範囲から review エージェント用の指示ファイルを inputs ディレクトリに生成し、`claude-review-agent-exec.sh` に渡す。inputs ディレクトリは末尾の `--inputs-dir <dir>` で指定する。従来の単一ペアに限り、第4引数の inputs ディレクトリ指定と `diff_range` 省略時の `HEAD` も引き続き使える。使用モデルは `state/routing.tsv` の review 行から `claude-common.sh` が読む。`HEAD` は追跡済みファイルの未コミット変更のみをレビュー対象にする。未追跡ファイル・git 管理外ファイルはこの方法では差分に出ないため、それらのレビューには `claude-review-files-exec.sh` でファイルパスを指定する。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
+## レビュー（必須）
+
+実装委譲（`codex-exec.sh` / `claude-impl-exec.sh` によるコード編集）が完了したら、**必ず**レビューを回す。レビューを別工程として委譲せずに diff を目視しただけ、`bash -n` や構文確認をしただけでは完了にしない。
+
+通常は実装委譲スクリプトがレビューを自動チェーンする。ただし `/tmp/claude-active-topic` が存在して非空の場合は自動チェーンせず、標準出力へ `DELEGATE_REVIEW_RANGE<TAB><worktree><TAB><PRE_HEAD>..<POST_HEAD>` の固定形式でレビュー範囲を1行出力する。この場合、委譲元が出力された範囲を使って別途レビューを回す。マーカーの内容は参照しない。
+
+- 対象には、その委譲が変更したファイルを指定する。git 管理下のファイルの場合は diff_range（コミット範囲）を渡し（例: `HEAD~1..HEAD`）、git 管理外のファイルの場合はファイルパスを指定する。レビューを回すためにコミットさせない。
+- レビュー結果を確認するまで、そのサブタスクを完了扱いにしない・ユーザーへ完了報告をしない。
+- 指摘が出た場合は、修正も実装委譲としてやり直し、再度レビューを回す。
+
+調査・設計など、コード編集を伴わない委譲はこの対象外。
+
 ## 指示ファイルのテンプレート
 
-`inputs/_template.md`（スキル同梱）を参照し、`/tmp/delegate-inputs/<task>.md` にコピーして使う。
+`inputs/_template.md`（スキル同梱）を参照し、指定した inputs ディレクトリの `<task>.md` にコピーして使う。
 
 ## 失敗時の扱い
 
 - 委譲先コマンド（`codex exec` / `claude -p`）が非0終了した場合・ハングした場合は、独自のワークアラウンドを探さず、ログと状況をユーザーに報告して判断を仰ぐ。
 - 同じ指示での自動リトライはしない（指示を変えずに再実行しても結果は変わらない）。
+- `DELEGATE_PERMISSION_OUT_OF_SCOPE` で終了した場合、指示を修正する前に委譲先のエージェント定義（`.claude/agents/<agent>.md`）と実行スクリプトを読んで原因を確定する。推測のまま同型の指示で再委譲しない。
 
 ## 例
 
 ```bash
-bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-exec.sh sub /path/to/workdir <task>.md /tmp/delegate-inputs
-bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal.md main..HEAD /tmp/delegate-inputs
+INPUTS_DIR=/tmp/delegate-inputs
+bash {BASE_DIR}/scripts/codex-exec.sh /path/to/workdir <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh /path/to/workdir <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-review-exec.sh /path/to/workdir /path/to/goal-1.md main..HEAD /path/to/goal-2.md HEAD~3..HEAD --inputs-dir "$INPUTS_DIR"
 ```
