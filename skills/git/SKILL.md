@@ -5,13 +5,11 @@ description: >
   `/git worktrees [dir]` で全worktreeのブランチ・ahead/behind・未追跡ファイルを一括表示。
   `/git find <hash> [dir]` で特定コミットが各worktreeに含まれるか検索。
   `/git untracked [dir]` でignoredを含むgit管理外ファイル・ディレクトリを一覧表示。
-  `/git rebase <parent> [child]` でrebase（コンフリクト時のルールあり）。
   `/git remove-worktree <branch|path>` でworktreeを削除（失敗時は自己判断で突破せずユーザー報告）。
   以下のときに必ず使うこと：
   「worktreeの状態を確認したい」「各ブランチのリモートとの差分を見たい」→ `/git worktrees`
   「このコミットがどのブランチに入っているか調べたい」→ `/git find`
   「ignoredを含むgit管理外ファイルを確認したい」→ `/git untracked`
-  「rebaseして」→ `/git rebase`
   「worktreeを削除して」→ `/git remove-worktree`
 ---
 
@@ -48,27 +46,6 @@ bash <base_dir>/scripts/untracked.sh [dir]
 - ignoredを含むgit管理外ファイル・ディレクトリを一覧表示
 - 対象は単一リポジトリ
 - read-only
-
-## `/git rebase <parent> [child]`
-
-`child` を `parent` にrebaseする。`child` 省略時はカレントブランチ。
-
-```bash
-bash <base_dir>/scripts/rebase.sh <parent> [child]
-```
-
-- `git rebase` の直接実行は hook（`git-guard.sh`）で deny されるため、必ずこのスクリプト経由で行う
-- コンフリクト発生時はスクリプトが `--abort` して exit 2 で終了する。**ユーザーに報告して終了**する
-  - コンフリクトしたファイル一覧（stderr に出る）と概要を報告する
-  - 自己判断での解決をしない
-
-### worktreeの場所
-
-ブランチ名からworktreeパスを解決する：
-
-```bash
-git worktree list --porcelain | grep -B2 "branch refs/heads/<branch-name>" | head -1
-```
 
 ## `/git remove-worktree <branch|path>`
 
