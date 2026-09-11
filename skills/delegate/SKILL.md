@@ -39,7 +39,7 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 
 - 実装: `state/routing.tsv` の implementation 行の backend で決める（`codex` → `scripts/codex-exec.sh` / `claude` → `scripts/claude-impl-exec.sh`）。委譲前に必ず `state/routing.tsv` を読み、記憶や既定の思い込みでスクリプトを選ばない。
 - その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-sub-exec.sh`
-- レビュー: `scripts/claude-review-exec.sh`
+- レビュー: diff 範囲指定は `scripts/claude-review-exec.sh`、ファイル指定は `scripts/claude-review-files-exec.sh`
 
 claude の各エージェント用スクリプトは薄いラッパで、共通処理（モデル解決・追加資料の読み込み・`--add-dir` 組み立て・プロンプト生成・実行と結果出力・フォールバック提案）は `scripts/claude-common.sh` に集約する。
 
@@ -126,9 +126,11 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。複数の
 
 実装委譲（`codex-exec.sh` / `claude-impl-exec.sh` によるコード編集）が完了したら、**必ず**レビューを回す。レビューを別工程として委譲せずに diff を目視しただけ、`bash -n` や構文確認をしただけでは完了にしない。
 
-通常は実装委譲スクリプトがレビューを自動チェーンする。ただし `/tmp/claude-active-topic` が存在して非空の場合は自動チェーンせず、標準出力へ `DELEGATE_REVIEW_RANGE<TAB><worktree><TAB><PRE_HEAD>..<POST_HEAD>` の固定形式でレビュー範囲を1行出力する。この場合、委譲元が出力された範囲を使って別途レビューを回す。マーカーの内容は参照しない。
+実装委譲スクリプトはレビューを起動しない。委譲先は変更した各ファイルを最終報告に `DELEGATE_CHANGED_FILE<TAB><絶対パス>` 形式（`<TAB>` はタブ文字）で1行ずつ列挙する。実装委譲スクリプトはその申告だけを抽出し、標準出力へ `DELEGATE_REVIEW_FILE<TAB><絶対パス>` 形式で渡す。委譲元は受け取ったファイルを `claude-review-files-exec.sh` に指定してレビューを回す。
 
-- 対象には、その委譲が変更したファイルを指定する。git 管理下のファイルの場合は diff_range（コミット範囲）を渡し（例: `HEAD~1..HEAD`）、git 管理外のファイルの場合はファイルパスを指定する。レビューを回すためにコミットさせない。
+委譲先から申告が1行もない場合、実装委譲スクリプトは `DELEGATE_REVIEW_UNRESOLVED<TAB><worktree><TAB>no_declared_files` を出力する。これは変更なしを意味しない。委譲元はレビュー対象を特定できていないものとして扱い、サブタスクを完了扱いにしない。
+
+- 対象には、`DELEGATE_REVIEW_FILE` で渡されたファイルを指定する。レビュー対象の検出に git の差分やコミット範囲を使わない。レビューを回すために追加でコミットさせない。
 - レビュー結果を確認するまで、そのサブタスクを完了扱いにしない・ユーザーへ完了報告をしない。
 - 指摘が出た場合は、修正も実装委譲としてやり直し、再度レビューを回す。
 
