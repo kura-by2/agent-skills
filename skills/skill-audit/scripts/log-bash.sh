@@ -1,7 +1,7 @@
 #!/bin/bash
 # PostToolUse(Bash): 叩いたコマンドを日付別ログに記録する（CLI/手順候補検出の原データ）。
-# 出力先は skill直下 logs/commands/<date>.log（gitignore対象）。1行 = command。
-dir="$(dirname "$0")/../logs/commands"
+# 出力先は $CLAUDE_PROJECT_DIR/logs/commands/<date>.log（gitignore対象）。1行 = command。
+dir="${CLAUDE_PROJECT_DIR:?}/logs/commands"
 mkdir -p "$dir"
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' | tr '\n' ' ')
