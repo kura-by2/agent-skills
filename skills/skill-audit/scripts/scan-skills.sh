@@ -7,7 +7,7 @@ set -euo pipefail
 
 BASE_DIR=$(cd "$(dirname "$0")/.." && pwd)
 TARGETS="${1:-$BASE_DIR/targets.md}"
-USAGE_LOG="$BASE_DIR/logs/skill-usage.log"
+USAGE_LOG="${CLAUDE_PROJECT_DIR:?}/logs/skill-usage.log"
 STALE_DAYS=30
 
 if [ ! -f "$TARGETS" ]; then

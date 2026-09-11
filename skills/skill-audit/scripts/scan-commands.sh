@@ -35,6 +35,7 @@ VALID_DIRS=()
 for dir in "${TARGET_DIRS[@]}"; do
   [ -z "$dir" ] && continue
   dir="${dir/#\~/$HOME}"
+  [[ "$dir" = /* ]] || dir="${CLAUDE_PROJECT_DIR:?}/$dir"
   if [ -d "$dir" ]; then
     VALID_DIRS+=("$dir")
   else
