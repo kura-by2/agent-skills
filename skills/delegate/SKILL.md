@@ -31,6 +31,8 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 
 ## バックエンド
 
+プロジェクトルートは `AGENT_PROJECT_DIR` → `CLAUDE_PROJECT_DIR` →カレントディレクトリの git リポジトリルートの順で解決する。以下の `$AGENT_PROJECT_DIR` 表記はこの解決後のプロジェクトルートを指す。
+
 利用可能モデル一覧は `$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` のローカル固有の設定表（`.gitignore` で追跡しない）で、performance はフォールバック候補の並べ替えに使う。
 
 委譲先の `task_type` と backend / agent / 使用モデルの対応は `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` のローカル固有の設定表（`.gitignore` で追跡しない）で、実行スクリプトはこの表から具体モデル名を直接読む。implementation の agent は、backend が `claude` のとき `impl`、backend が `codex` のとき空欄にする（codex は agent を使わない）。

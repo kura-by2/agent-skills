@@ -12,6 +12,7 @@ description: >
 # Memorizer: コンテキスト管理
 
 ファイル操作はすべて `{BASE_DIR}/scripts/` のスクリプトに集約されている。
+プロジェクトルートは `AGENT_PROJECT_DIR` → `CLAUDE_PROJECT_DIR` →カレントディレクトリの git リポジトリルートの順で解決する。以下の `$AGENT_PROJECT_DIR` 表記はこの解決後のプロジェクトルートを指す。
 スクリプトはコンテキストルートを `$AGENT_PROJECT_DIR/memory/contexts/` に固定するので、**手で .md を作成・移動しない。**
 処理の詳細は各スクリプトを参照。
 

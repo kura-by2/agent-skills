@@ -1,8 +1,12 @@
 #!/bin/bash
 
-if [ -z "${AGENT_PROJECT_DIR:-}" ]; then
-  echo "AGENT_PROJECT_DIR が設定されていません" >&2
+PROJECT_DIR="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
+if [ -z "$PROJECT_DIR" ]; then
+  PROJECT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)" || true
+fi
+if [ -z "$PROJECT_DIR" ]; then
+  echo "AGENT_PROJECT_DIR、CLAUDE_PROJECT_DIR、カレントディレクトリの git リポジトリからプロジェクトルートを解決できません" >&2
   exit 1
 fi
 
-DIR="$AGENT_PROJECT_DIR/memory/contexts"
+DIR="$PROJECT_DIR/memory/contexts"

@@ -1,12 +1,17 @@
 #!/bin/bash
 
 delegate_model_cache_state_dir() {
-  if [ -z "${AGENT_PROJECT_DIR:-}" ]; then
-    printf 'error: AGENT_PROJECT_DIR is required to resolve delegate state files\n' >&2
+  local project_dir="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
+
+  if [ -z "$project_dir" ]; then
+    project_dir="$(git rev-parse --show-toplevel 2>/dev/null)" || true
+  fi
+  if [ -z "$project_dir" ]; then
+    printf 'error: unable to resolve project root from AGENT_PROJECT_DIR, CLAUDE_PROJECT_DIR, or the current git repository\n' >&2
     return 1
   fi
 
-  printf '%s/state/delegate\n' "$AGENT_PROJECT_DIR"
+  printf '%s/state/delegate\n' "$project_dir"
 }
 
 delegate_model_cache_current_week() {
