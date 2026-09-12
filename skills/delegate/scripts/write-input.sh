@@ -24,6 +24,11 @@ BODY=$(cat)
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TEMPLATE="$SCRIPT_DIR/../inputs/_template.md"
+if [ ! -r "$TEMPLATE" ]; then
+  printf 'error: template is not readable: %s\n' "$TEMPLATE" >&2
+  exit 1
+fi
+
 MISSING_SECTIONS=()
 while IFS= read -r heading; do
   if ! printf '%s\n' "$BODY" | grep -Fxq "$heading"; then
