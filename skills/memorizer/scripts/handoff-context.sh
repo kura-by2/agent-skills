@@ -3,7 +3,7 @@
 # 親トピックの決定事項と次のアクションをスナップショットし、次フェーズ用の子トピックを作る。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 parent="${1:?Usage: handoff-context.sh <parent-topic> <child-topic>}"
 child="${2:?Usage: handoff-context.sh <parent-topic> <child-topic>}"
 parent_file="$DIR/$parent.md"

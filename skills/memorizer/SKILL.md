@@ -12,7 +12,7 @@ description: >
 # Memorizer: コンテキスト管理
 
 ファイル操作はすべて `{BASE_DIR}/scripts/` のスクリプトに集約されている。
-スクリプトがコンテキストルートを `./memory/contexts/`（CWD基準）に固定するので、**手で .md を作成・移動しない。**
+スクリプトはコンテキストルートを `$AGENT_PROJECT_DIR/memory/contexts/` に固定するので、**手で .md を作成・移動しない。**
 処理の詳細は各スクリプトを参照。
 
 ## 設計原則
@@ -60,7 +60,7 @@ goal_doc:         # 省略可。このトピックの不変ゴール・計画書
 ## コマンド
 
 ### `/memorizer`（引数なし）— 初期化
-`memory/contexts/index.md` を Read し、トピック一覧を表示する。無ければ「コンテキストなし」。
+`$AGENT_PROJECT_DIR/memory/contexts/index.md` を Read し、トピック一覧を表示する。無ければ「コンテキストなし」。
 
 ### `/memorizer new <topic>`
 ```bash
@@ -92,7 +92,7 @@ bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
 出力された通常のパスを Read する。depends_on は load では自動で読まない。
 フロントマターに `goal_doc:` があれば、そのファイルを**無条件で Read** してゴールとして採用する。ゴールを固定した上で `## 決定事項`・`## 次のアクション` を実行前提として採用し、その後に要約・一覧提示へ進む。
-`MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
+`MISSING:<topic>` は `$AGENT_PROJECT_DIR/memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。
 **要約・一覧提示で止めない。** `## 決定事項`・`## 次のアクション`・本文中の前提値（base ブランチ・命名/設計規約・実験の狙い等）を、以後の作業の「実行の前提」として採用する。以降そのセッションでは、context 内で答えが出る事項をユーザーへ聞き返さない（「どこを見るか」が context に書いてあるなら自分で特定する）。実環境（worktree 一覧・別の計画書など）と食い違う場合も、まず context 記載を正として突き合わせてから動き、食い違いの解消をユーザーへ丸投げしない。

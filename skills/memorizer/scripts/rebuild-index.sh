@@ -6,7 +6,7 @@
 # - フロントマターに merged_into: があるトピック（統合済み）は除外する
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 if [ ! -d "$DIR" ]; then
   echo "コンテキストディレクトリがありません: $DIR" >&2
   exit 1

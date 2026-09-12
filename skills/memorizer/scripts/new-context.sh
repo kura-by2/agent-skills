@@ -2,7 +2,7 @@
 # Usage: new-context.sh <topic>
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 topic="${1:?Usage: new-context.sh <topic>}"
 f="$DIR/$topic.md"
 

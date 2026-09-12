@@ -4,7 +4,7 @@
 # 見つからないトピックは MISSING:<topic> を出力する。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 today=$(date +%F)
 
 seen=" "

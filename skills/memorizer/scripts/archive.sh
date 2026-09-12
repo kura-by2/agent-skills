@@ -5,7 +5,7 @@
 set -euo pipefail
 
 DAYS="${1:-30}"
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 if [ ! -d "$DIR" ]; then
   echo "コンテキストディレクトリがありません: $DIR" >&2
   exit 1

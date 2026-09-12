@@ -5,7 +5,7 @@
 # 無ければ rebuild-index.sh での生成を促す。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 IDX="$DIR/index.md"
 export SUM_MAX="${1:-60}"  # summary の最大文字数
 

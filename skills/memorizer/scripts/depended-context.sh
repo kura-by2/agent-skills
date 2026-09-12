@@ -4,7 +4,7 @@
 # last_loaded は更新しない。見つからないトピックは MISSING:<topic> を出力する。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 
 if [ "$#" -eq 0 ]; then
   echo "Usage: depended-context.sh <topic...>" >&2
