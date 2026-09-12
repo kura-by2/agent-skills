@@ -1,9 +1,12 @@
 #!/bin/bash
 
-delegate_model_cache_skill_dir() {
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  cd "$script_dir/.." && pwd
+delegate_model_cache_state_dir() {
+  if [ -z "${AGENT_PROJECT_DIR:-}" ]; then
+    printf 'error: AGENT_PROJECT_DIR is required to resolve delegate state files\n' >&2
+    return 1
+  fi
+
+  printf '%s/state/delegate\n' "$AGENT_PROJECT_DIR"
 }
 
 delegate_model_cache_current_week() {
@@ -115,10 +118,15 @@ delegate_model_backend_from_name() {
 }
 
 delegate_routing_file() {
-  local skill_dir
+  local state_dir
 
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  printf '%s\n' "${DELEGATE_ROUTING_FILE:-$skill_dir/state/routing.tsv}"
+  if [ -n "${DELEGATE_ROUTING_FILE:-}" ]; then
+    printf '%s\n' "$DELEGATE_ROUTING_FILE"
+    return 0
+  fi
+
+  state_dir="$(delegate_model_cache_state_dir)" || return 1
+  printf '%s/routing.tsv\n' "$state_dir"
 }
 
 delegate_model_for_route() {
@@ -182,20 +190,28 @@ delegate_model_for_agent() {
 
 delegate_model_cache_file_for_backend() {
   local backend="$1"
-  local skill_dir cache_dir
+  local state_dir cache_dir
 
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/state/.model-cache}"
+  if [ -n "${DELEGATE_MODEL_CACHE_DIR:-}" ]; then
+    cache_dir="$DELEGATE_MODEL_CACHE_DIR"
+  else
+    state_dir="$(delegate_model_cache_state_dir)" || return 1
+    cache_dir="$state_dir/.model-cache"
+  fi
   printf '%s/%s-models.json\n' "$cache_dir" "$backend"
 }
 
 delegate_model_table_for_backend() {
   local backend="$1"
   local order="$2"
-  local skill_dir tier_file
+  local state_dir tier_file
 
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/state/model-tiers.tsv}"
+  if [ -n "${DELEGATE_MODEL_TIERS_FILE:-}" ]; then
+    tier_file="$DELEGATE_MODEL_TIERS_FILE"
+  else
+    state_dir="$(delegate_model_cache_state_dir)" || return 1
+    tier_file="$state_dir/model-tiers.tsv"
+  fi
 
   if [ ! -f "$tier_file" ]; then
     printf 'error: delegate model performance table is missing: %s\n' "$tier_file" >&2
@@ -219,10 +235,14 @@ delegate_model_table_for_backend() {
 delegate_warn_model_tier_drift() {
   local backend="$1"
   local cache_file="$2"
-  local skill_dir tier_file listed_models tier_models
+  local state_dir tier_file listed_models tier_models
 
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/state/model-tiers.tsv}"
+  if [ -n "${DELEGATE_MODEL_TIERS_FILE:-}" ]; then
+    tier_file="$DELEGATE_MODEL_TIERS_FILE"
+  else
+    state_dir="$(delegate_model_cache_state_dir)" || return 1
+    tier_file="$state_dir/model-tiers.tsv"
+  fi
 
   if [ ! -f "$tier_file" ]; then
     printf 'warning: delegate model performance table is missing: %s\n' "$tier_file" >&2
@@ -273,7 +293,7 @@ delegate_warn_model_tier_drift() {
 }
 
 delegate_report_model_tier_guidance() {
-  local backend cache_file skill_dir tier_file listed_models tier_models difference_models
+  local backend cache_file state_dir tier_file listed_models tier_models difference_models
   local catalog_order tier_order backends
 
   case "${1:-}" in
@@ -289,8 +309,12 @@ delegate_report_model_tier_guidance() {
       ;;
   esac
 
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  tier_file="${DELEGATE_MODEL_TIERS_FILE:-$skill_dir/state/model-tiers.tsv}"
+  if [ -n "${DELEGATE_MODEL_TIERS_FILE:-}" ]; then
+    tier_file="$DELEGATE_MODEL_TIERS_FILE"
+  else
+    state_dir="$(delegate_model_cache_state_dir)" || return 1
+    tier_file="$state_dir/model-tiers.tsv"
+  fi
 
   if [ ! -f "$tier_file" ]; then
     printf 'error: delegate model performance table is missing: %s\n' "$tier_file" >&2
@@ -529,10 +553,14 @@ delegate_maybe_emit_fallback_suggest() {
 
 delegate_ensure_model_cache() {
   local backend="$1"
-  local skill_dir cache_dir cache_file
+  local state_dir cache_dir cache_file
 
-  skill_dir="$(delegate_model_cache_skill_dir)"
-  cache_dir="${DELEGATE_MODEL_CACHE_DIR:-$skill_dir/state/.model-cache}"
+  if [ -n "${DELEGATE_MODEL_CACHE_DIR:-}" ]; then
+    cache_dir="$DELEGATE_MODEL_CACHE_DIR"
+  else
+    state_dir="$(delegate_model_cache_state_dir)" || return 1
+    cache_dir="$state_dir/.model-cache"
+  fi
   cache_file="$cache_dir/${backend}-models.json"
 
   if delegate_model_cache_is_current "$cache_file"; then
