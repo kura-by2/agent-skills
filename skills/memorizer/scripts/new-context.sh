@@ -20,6 +20,12 @@ updated: $today
 last_loaded: $today
 ---
 
+## goal-stack
+
+
+## review-stack
+
+
 ## 現在の状態
 
 

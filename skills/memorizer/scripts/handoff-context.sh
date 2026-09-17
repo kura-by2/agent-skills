@@ -17,13 +17,19 @@ today=$(date +%F)
 tmp=$(mktemp)
 
 awk '
+  /^## goal-stack[[:space:]]*$/ { section = "goals"; next }
   /^## 決定事項[[:space:]]*$/ { section = "decisions"; next }
   /^## 次のアクション[[:space:]]*$/ { section = "actions"; next }
   /^## / { section = ""; next }
+  section == "goals" && /^- \[ \]/ { goals = goals $0 "\n" }
   section == "decisions" { decisions = decisions $0 "\n" }
   section == "actions" { actions = actions $0 "\n" }
   END {
-    printf("## 現在の状態\n")
+    printf("## goal-stack\n")
+    if (goals ~ /[^[:space:]]/) {
+      printf("%s", goals)
+    }
+    printf("\n## 現在の状態\n")
     printf("親トピック `%s` から次フェーズへ引き継いだコンテキスト。\n\n\n", parent)
     printf("## 決定事項\n")
     if (decisions ~ /[^[:space:]]/) {
