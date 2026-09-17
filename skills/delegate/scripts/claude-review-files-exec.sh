@@ -1,9 +1,31 @@
 #!/bin/bash
-# Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir]
+# Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]
 # ファイルパス指定レビュー委譲用の薄いラッパ。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+USAGE='Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]'
+
+DIFF_RANGE=""
+POSITIONAL=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --range)
+      if [ -z "${2:-}" ]; then
+        printf 'error: --range requires a diff range\n' >&2
+        exit 1
+      fi
+      DIFF_RANGE="$2"
+      shift 2
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- ${POSITIONAL+"${POSITIONAL[@]}"}
 
 WORKTREE="${1:-}"
 GOAL_FILE="${2:-}"
@@ -11,7 +33,7 @@ FILES="${3:-}"
 INPUTS_DIR="${4:-/tmp/delegate-inputs}"
 
 if [ -z "$WORKTREE" ] || [ -z "$GOAL_FILE" ] || [ -z "$FILES" ]; then
-  echo "Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir]"
+  echo "$USAGE"
   exit 1
 fi
 
@@ -60,9 +82,23 @@ goal: $GOAL_FILE
 ## files
 files:
 $FILE_LINES
+EOF
+
+if [ -n "$DIFF_RANGE" ]; then
+  cat >> "$TASK_FILE" <<EOF
+## range
+range: $DIFF_RANGE
+
+## note
+対象は上記ファイルです。git 管理下のファイルについては \`git -C $WORKTREE diff $DIFF_RANGE -- <file>\` で変更内容を確認したうえで、ファイル全文を読んでレビューしてください。
+git 管理外・新規作成のファイルは差分に出ないため、全文を読んでレビューしてください。
+EOF
+else
+  cat >> "$TASK_FILE" <<EOF
 ## note
 対象は差分ではなく成果物のファイル全文です。
 git 管理外・新規作成のファイルを含む前提のため、差分は取らず、上記ファイルの全文を読んでレビューしてください。
 EOF
+fi
 
 exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
