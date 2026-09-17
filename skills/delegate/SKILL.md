@@ -40,7 +40,7 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 起動スクリプトは作業種別で選ぶ。
 
 - 実装: `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` の implementation 行の backend で決める（`codex` → `scripts/codex-exec.sh` / `claude` → `scripts/claude-impl-exec.sh`）。委譲前に必ず `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` を読み、記憶や既定の思い込みでスクリプトを選ばない。
-- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-sub-exec.sh`。`sub` への委譲時は `claude-common.sh` が amuro の `docs/investigation-guidelines.md` を本文ごとプロンプトへ埋め込む（参照指示にすると読む必要に気づけたときしか読まれないため）。
+- その他（調査/現状把握/設計/トレードオフ比較）: `scripts/claude-sub-exec.sh`
 - レビュー: diff 範囲指定は `scripts/claude-review-exec.sh`、ファイル指定は `scripts/claude-review-files-exec.sh`
 
 claude の各エージェント用スクリプトは薄いラッパで、共通処理（モデル解決・追加資料の読み込み・`--add-dir` 組み立て・プロンプト生成・実行と結果出力・フォールバック提案）は `scripts/claude-common.sh` に集約する。
