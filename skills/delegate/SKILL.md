@@ -122,6 +122,10 @@ bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DI
 
 `claude-review-exec.sh` は同一 worktree の `<goal_file> <diff_range>` 対を1組以上受け取り、対ごとの goal とレビュー対象 diff 範囲から review エージェント用の指示ファイルを inputs ディレクトリに生成し、`claude-review-agent-exec.sh` に渡す。inputs ディレクトリは末尾の `--inputs-dir <dir>` で指定する。従来の単一ペアに限り、第4引数の inputs ディレクトリ指定と `diff_range` 省略時の `HEAD` も引き続き使える。使用モデルは `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` の review 行から `claude-common.sh` が読む。`HEAD` は追跡済みファイルの未コミット変更のみをレビュー対象にする。未追跡ファイル・git 管理外ファイルはこの方法では差分に出ないため、それらのレビューには `claude-review-files-exec.sh` でファイルパスを指定する。コミット済み変更をレビューする場合は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
+`claude-review-files-exec.sh` は `<worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]` を受け取る。`--range` を指定すると、git 管理下のファイルはその diff 範囲だけがレビュー対象になり、ファイル全文は差分を解釈する文脈としてのみ読ませる。`--range` を省略するとファイル全文がレビュー対象になる。git 管理外・新規作成のファイルは `--range` の有無にかかわらず全文が対象。
+
+どちらのスクリプトも、生成する指示ファイルに「差分に含まれない既存コードへの指摘はしない」旨の note を入れる。
+
 Bash 呼び出しは常に `run_in_background: true` を指定する。複数の並列実行は、この非同期実行を複数回投入する一形態として扱う。
 
 ## レビュー対象の受け渡し
