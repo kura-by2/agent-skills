@@ -65,4 +65,11 @@ for ((INDEX = 1; INDEX <= $#; INDEX += 2)); do
   printf 'goal: %s\ntarget: %s %s\n' "${!INDEX}" "$WORKTREE" "${!DIFF_INDEX}" >> "$TASK_FILE"
 done
 
+cat >> "$TASK_FILE" <<'EOF'
+
+## note
+レビュー対象は各 target の diff 範囲に限ります。
+差分を解釈するために必要ならファイル全文を読んで構いませんが、差分に含まれない既存コードへの指摘はしないでください。
+EOF
+
 exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
