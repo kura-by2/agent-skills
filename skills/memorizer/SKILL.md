@@ -30,7 +30,7 @@ description: >
 
 ## {topic}.md の構成
 
-LLM が内容を埋めるセクション。各セクション最大5項目。
+LLM が内容を埋めるセクション。各セクション最大5項目。ただし `## goal-stack`・`## review-stack` は上限なし。
 
 ```markdown
 ---
@@ -38,10 +38,10 @@ topic: {topic}
 updated: {date}
 depends_on:       # 省略可。depended で補足読みされる
   - {topic-a}
-goal_doc:         # 省略可。このトピックの不変ゴール・計画書の絶対パス。load 時に無条件で Read する。/tmp 等タスク終了で消える場所は不可（要点は本文へ写す）。
-  /absolute/path/to/plan.md
 ---
 
+## goal-stack     # 全体ゴールと完了条件。未完了は `- [ ]`、達成済みは `- [x]`。項目数の上限なし
+## review-stack   # レビュー待ちの蓄積。taskflow が揮発層の review-stack.md をそのまま写す。項目数の上限なし
 ## 現在の状態      # 1〜3行。index の summary はここの最初の非空行
 ## 決定事項        # 現在も有効な制約・このトピック固有の行動ルールもここに集約する
 ## 次のアクション
@@ -92,7 +92,7 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
 bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
 出力された通常のパスを Read する。depends_on は load では自動で読まない。
-フロントマターに `goal_doc:` があれば、そのファイルを**無条件で Read** してゴールとして採用する。ゴールを固定した上で `## 決定事項`・`## 次のアクション` を実行前提として採用し、その後に要約・一覧提示へ進む。
+`## goal-stack` の未完了項目（`- [ ]`）をこのトピックのゴールとして**無条件で採用**する。ゴールを固定した上で `## 決定事項`・`## 次のアクション` を実行前提として採用し、その後に要約・一覧提示へ進む。
 `MISSING:<topic>` は `$AGENT_PROJECT_DIR/memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。
