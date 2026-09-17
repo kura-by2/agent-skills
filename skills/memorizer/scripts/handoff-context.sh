@@ -29,7 +29,7 @@ awk '
     if (goals ~ /[^[:space:]]/) {
       printf("%s", goals)
     }
-    printf("\n## 現在の状態\n")
+    printf("\n## review-stack\n\n\n## 現在の状態\n")
     printf("親トピック `%s` から次フェーズへ引き継いだコンテキスト。\n\n\n", parent)
     printf("## 決定事項\n")
     if (decisions ~ /[^[:space:]]/) {
