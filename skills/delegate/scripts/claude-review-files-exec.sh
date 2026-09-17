@@ -90,8 +90,9 @@ if [ -n "$DIFF_RANGE" ]; then
 range: $DIFF_RANGE
 
 ## note
-対象は上記ファイルです。git 管理下のファイルについては \`git -C $WORKTREE diff $DIFF_RANGE -- <file>\` で変更内容を確認したうえで、ファイル全文を読んでレビューしてください。
-git 管理外・新規作成のファイルは差分に出ないため、全文を読んでレビューしてください。
+git 管理下のファイルは、レビュー対象を上記 range の差分に限ります。\`git -C $WORKTREE diff $DIFF_RANGE -- <file>\` で変更内容を確認してください。
+ファイル全文は差分を解釈するための文脈としてのみ読み、差分に含まれない既存コードへの指摘はしないでください。
+git 管理外・新規作成のファイルは差分に出ないため、全文をレビュー対象とします。
 EOF
 else
   cat >> "$TASK_FILE" <<EOF
