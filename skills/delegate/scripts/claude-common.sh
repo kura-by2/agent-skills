@@ -54,6 +54,20 @@ delegate_claude_exec() {
     ADD_DIR_ARGS+=(--add-dir "$INPUTS_DIR")
   fi
 
+  # 調査/設計委譲（sub）には amuro の調査指針を本文ごとプロンプトへ埋め込む。
+  # 「必要なら読む」誘導では読む必要に気づけたときしか読まれないため、参照指示ではなく内容そのものを渡す。
+  local GUIDELINES_PROMPT=""
+  if [ "$AGENT" = "sub" ]; then
+    # scripts ディレクトリからの相対では辿れない（.claude/skills/delegate は
+    # skills/delegate への symlink で、.. がリンク先の親に解決されるため）。
+    local GUIDELINES_FILE="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-.}}/.claude/skills/amuro/docs/investigation-guidelines.md"
+    if [ -f "$GUIDELINES_FILE" ]; then
+      GUIDELINES_PROMPT=$'\n\n---\n次は調査時に必ず適用する判断軸です（amuro/docs/investigation-guidelines.md）。この内容に従って、調査の深さと断定の可否を決めてください。\n\n'"$(cat "$GUIDELINES_FILE")"$'\n---\n'
+    else
+      printf 'warning: investigation guidelines not found: %s\n' "$GUIDELINES_FILE" >&2
+    fi
+  fi
+
   local CONTEXT_PROMPT=""
   if [ -n "$SELECTED_CONTEXT_FILE" ] && [ -f "$SELECTED_CONTEXT_FILE" ]; then
     local context_path
