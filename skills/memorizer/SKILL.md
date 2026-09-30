@@ -27,6 +27,7 @@ description: >
 ```
 
 保存対象はそのトピック自身の設計・決定・次アクションだけ。トピックに固有でない Claude の行動ルールは `/feedback` → `/persist-check` へ、経緯の記録は context-log の基準に従う。
+`## 次のアクション` を含め、自分（Claude）の作業範囲外の状態（push・PR 作成の要否など）は記載しない。
 
 ## {topic}.md の構成
 
