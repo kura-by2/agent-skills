@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: gh-as-owner.sh <owner/repo> -- <command...>
 set -u
 

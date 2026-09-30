@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: scan-skills.sh [targets.md path]
 # existing_assets.skills の相対パスは、実行時の CWD を基準に解決する。
 # existing_assets.skills 配下の SKILL.md 行数と skill-usage.log の最終利用日を集計する。

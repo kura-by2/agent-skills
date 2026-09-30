@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: pr-comments.sh <pr_number|pr_url> [owner/repo]
 set -e
 

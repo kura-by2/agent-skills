@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: pr-create.sh <worktree_path> <title> <body_file> [base]
 set -e
 

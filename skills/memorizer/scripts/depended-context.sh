@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: depended-context.sh <topic...>
 # 指定トピックの depends_on を再帰的にたどり、補足で読む依存先 .md のパスを出力する。
 # last_loaded は更新しない。見つからないトピックは MISSING:<topic> を出力する。

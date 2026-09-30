@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: rebuild-index.sh
 # {topic}.md 群から index.md を機械的に再生成する。
 # - updated はフロントマターの updated:

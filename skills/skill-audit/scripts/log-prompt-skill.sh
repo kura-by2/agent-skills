@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # UserPromptSubmit: ユーザーがスラッシュコマンドで明示起動したスキルを skill-usage.log に記録する。
 # agent frontmatter では UserPromptSubmit が効かないため settings.json に登録し、
 # main 以外は agent_type で除外して収集対象を main エージェントに揃える。

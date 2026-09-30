@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: scan-commands.sh [targets.md path]
 # targets.md の target（複数可）配下の日付別ログ(<date>.log)を lookback_days 範囲で読み、
 # 引数の揺れ（パス・日付・連番・slug等）を正規化したうえで

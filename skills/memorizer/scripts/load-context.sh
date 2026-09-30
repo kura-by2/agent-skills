@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: load-context.sh <topic...>
 # 指定トピックの存在するものを last_loaded 更新して読むべき .md のパスを出力する。
 # 見つからないトピックは MISSING:<topic> を出力する。

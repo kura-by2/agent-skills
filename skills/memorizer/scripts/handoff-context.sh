@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: handoff-context.sh <parent-topic> <child-topic>
 # 親トピックの決定事項と次のアクションをスナップショットし、次フェーズ用の子トピックを作る。
 set -euo pipefail

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: list-context.sh [summary最大文字数]
 # index.md（Markdownテーブル）を列幅を揃えた表で出力する。
 # summary は長いので 1 行に収まるよう切り詰める（詳細は load で見る）。

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: append-log.sh <topic> <text_file>
 # text_file の内容を $AGENT_PROJECT_DIR/memory/contexts/<topic>/context-log.md に追記する。
 set -euo pipefail

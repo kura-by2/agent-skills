@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 PROJECT_DIR="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
 if [ -z "$PROJECT_DIR" ]; then

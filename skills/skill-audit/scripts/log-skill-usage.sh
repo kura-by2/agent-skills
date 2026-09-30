@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PostToolUse(Skill): スキル使用を記録する（未使用スキルの退避判断の原データ）
 dir="${CLAUDE_PROJECT_DIR:?}/logs"
 mkdir -p "$dir"

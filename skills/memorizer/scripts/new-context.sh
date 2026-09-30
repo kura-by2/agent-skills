@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: new-context.sh <topic>
 set -euo pipefail
 

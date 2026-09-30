@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: archive.sh [days]
 # last_loaded（なければ updated、なければ mtime）が days 日より古いトピックを
 # archive/ に退避し、index.md を再生成する

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: fm-set.sh <file> <key> <value>
 # フロントマターの key を value に設定する（無ければフロントマター末尾に挿入）。
 # GNU/BSD 両対応のため sed -i を使わない。

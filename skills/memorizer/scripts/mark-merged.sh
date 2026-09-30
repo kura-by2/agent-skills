@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: mark-merged.sh <merged_into> <old_topic...>
 # 旧トピックのフロントマターに merged_into を付与し index を再生成する。
 set -euo pipefail
