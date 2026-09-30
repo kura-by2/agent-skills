@@ -36,7 +36,7 @@ if [ -e "$OUT" ] || [ -L "$OUT" ]; then
     printf 'error: 既存の指示ファイルを退避できない（bash スキルの mv.sh が見つからない）: %s\n' "$OUT" >&2
     exit 1
   fi
-  bash "$MV_SCRIPT" "$OUT" "$OUT.bak-$(date +%Y%m%d-%H%M%S)-$$" >&2
+  bash "$MV_SCRIPT" "$OUT" "$OUT.bak-$(date +%Y%m%d-%H%M%S%3N)" >&2
 fi
 TEMPLATE="$SCRIPT_DIR/../inputs/_template.md"
 if [ ! -r "$TEMPLATE" ]; then
