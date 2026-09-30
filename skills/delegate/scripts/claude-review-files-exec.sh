@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]
 # ファイルパス指定レビュー委譲用の薄いラッパ。
 set -euo pipefail

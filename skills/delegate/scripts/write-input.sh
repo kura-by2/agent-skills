@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: write-input.sh <task_name> [inputs_dir]   (指示本文は stdin から渡す)
 # delegate の指示ファイルを <inputs_dir>/<task_name>.md に作成するだけの薄いラッパ。
 # enforce-sync-deadline フックで明示許可される「委譲の下準備」専用コマンド。

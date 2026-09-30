@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 delegate_model_cache_state_dir() {
   local project_dir="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"

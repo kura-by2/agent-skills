@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: claude-review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] [--inputs-dir <dir>]
 # ゴールアライメントレビュー委譲用の薄いラッパ。
 set -euo pipefail

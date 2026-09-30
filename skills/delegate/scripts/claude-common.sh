@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ファンネル（調査/設計/レビュー/実装委譲）の実行エンジン（claude 版）の共通部。
 # エージェント別スクリプト（claude-sub-exec.sh / claude-review-agent-exec.sh /
 # claude-impl-exec.sh）から source して delegate_claude_exec を呼ぶ。

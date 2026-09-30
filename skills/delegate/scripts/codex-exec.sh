@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: codex-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
 set -euo pipefail
 

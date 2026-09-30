@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: claude-impl-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
 # 実装委譲用（impl エージェント、書き込み・コミット許可／検証コマンド禁止）。
 # codex が使えない場合のフォールバックとして実装を回す。
