@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: handoff-context.sh <parent-topic> <child-topic>
-# 親トピックの決定事項と次のアクションをスナップショットし、次フェーズ用の子トピックを作る。
+# 親トピックの決定事項と goal-stack の未完了項目をスナップショットし、次フェーズ用の子トピックを作る。
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
@@ -19,11 +19,9 @@ tmp=$(mktemp)
 awk '
   /^## goal-stack[[:space:]]*$/ { section = "goals"; next }
   /^## 決定事項[[:space:]]*$/ { section = "decisions"; next }
-  /^## 次のアクション[[:space:]]*$/ { section = "actions"; next }
   /^## / { section = ""; next }
   section == "goals" && /^- \[ \]/ { goals = goals $0 "\n" }
   section == "decisions" { decisions = decisions $0 "\n" }
-  section == "actions" { actions = actions $0 "\n" }
   END {
     printf("## goal-stack\n")
     if (goals ~ /[^[:space:]]/) {
@@ -34,10 +32,6 @@ awk '
     printf("## 決定事項\n")
     if (decisions ~ /[^[:space:]]/) {
       printf("%s", decisions)
-    }
-    printf("\n## 次のアクション\n")
-    if (actions ~ /[^[:space:]]/) {
-      printf("%s", actions)
     }
   }
 ' parent="$parent" "$parent_file" > "$tmp"

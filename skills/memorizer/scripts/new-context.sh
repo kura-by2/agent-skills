@@ -30,9 +30,6 @@ last_loaded: $today
 
 
 ## 決定事項
-
-
-## 次のアクション
 EOF
 
 bash "$(dirname "$0")/rebuild-index.sh"
