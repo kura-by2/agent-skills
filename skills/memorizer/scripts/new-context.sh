@@ -26,9 +26,6 @@ last_loaded: $today
 ## review-stack
 
 
-## 現在の状態
-
-
 ## 決定事項
 EOF
 

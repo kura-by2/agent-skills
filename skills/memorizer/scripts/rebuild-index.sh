@@ -2,7 +2,7 @@
 # Usage: rebuild-index.sh
 # {topic}.md 群から index.md を機械的に再生成する。
 # - updated はフロントマターの updated:
-# - summary は「## 現在の状態」セクションの最初の非空行
+# - summary は goal-stack の最初の未完了項目、無ければ最後の完了項目のゴール文
 # - フロントマターに merged_into: があるトピック（統合済み）は除外する
 set -euo pipefail
 
@@ -25,7 +25,23 @@ TMP=$(mktemp)
     topic="${base%.md}"
     updated=$(awk -F': *' '/^updated:/{print $2; exit}' "$f")
     last_loaded=$(awk -F': *' '/^last_loaded:/{print $2; exit}' "$f")
-    summary=$(awk '/^## 現在の状態/{f=1;next} f&&/^##/{exit} f&&NF{print;exit}' "$f")
+    summary=$(awk '
+      /^## goal-stack[[:space:]]*$/ { section = 1; next }
+      section && /^## / { exit }
+      section && /^- \[ \] / {
+        sub(/^- \[ \] /, "")
+        sub(/[[:space:]]*<!--[[:space:]]*pushed:.*-->[[:space:]]*$/, "")
+        found = 1
+        print
+        exit
+      }
+      section && /^- \[x\] / {
+        sub(/^- \[x\] /, "")
+        sub(/[[:space:]]*<!--[[:space:]]*pushed:.*-->[[:space:]]*$/, "")
+        completed = $0
+      }
+      END { if (!found && completed != "") print completed }
+    ' "$f")
     echo "| $topic | ${updated:--} | ${last_loaded:--} | ${summary:--} |"
   done
 } > "$TMP"
