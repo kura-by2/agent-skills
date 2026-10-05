@@ -1,11 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: archive.sh [days]
 # last_loaded（なければ updated、なければ mtime）が days 日より古いトピックを
 # archive/ に退避し、index.md を再生成する
 set -euo pipefail
 
 DAYS="${1:-30}"
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 if [ ! -d "$DIR" ]; then
   echo "コンテキストディレクトリがありません: $DIR" >&2
   exit 1

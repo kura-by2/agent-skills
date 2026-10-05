@@ -1,11 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: list-context.sh [summary最大文字数]
 # index.md（Markdownテーブル）を列幅を揃えた表で出力する。
 # summary は長いので 1 行に収まるよう切り詰める（詳細は load で見る）。
 # 無ければ rebuild-index.sh での生成を促す。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 IDX="$DIR/index.md"
 export SUM_MAX="${1:-60}"  # summary の最大文字数
 

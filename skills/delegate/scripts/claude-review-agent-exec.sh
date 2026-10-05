@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: claude-review-agent-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
 # レビュー委譲用（review エージェント、書き込み禁止）。
 # 指示ファイルは claude-review-exec.sh / claude-review-files-exec.sh が生成する。

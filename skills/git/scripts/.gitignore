@@ -4,3 +4,4 @@
 !remove-worktree.sh
 !untracked.sh
 !worktrees.sh
+!git-mv.sh

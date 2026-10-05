@@ -12,7 +12,8 @@ description: >
 # Memorizer: コンテキスト管理
 
 ファイル操作はすべて `{BASE_DIR}/scripts/` のスクリプトに集約されている。
-スクリプトがコンテキストルートを `./memory/contexts/`（CWD基準）に固定するので、**手で .md を作成・移動しない。**
+プロジェクトルートは `AGENT_PROJECT_DIR` → `CLAUDE_PROJECT_DIR` →カレントディレクトリの git リポジトリルートの順で解決する。以下の `$AGENT_PROJECT_DIR` 表記はこの解決後のプロジェクトルートを指す。
+スクリプトはコンテキストルートを `$AGENT_PROJECT_DIR/memory/contexts/` に固定するので、**手で .md を作成・移動しない。**
 処理の詳細は各スクリプトを参照。
 
 ## 設計原則
@@ -25,9 +26,12 @@ description: >
 ✓ auth-session-storage     ← セッション保存方式
 ```
 
+保存対象はそのトピック自身の設計・決定・次アクションだけ。トピックに固有でない Claude の行動ルールは `/feedback` → `/persist-check` へ、経緯の記録は context-log の基準に従う。
+自分（Claude）の作業範囲外の状態（push・PR 作成の要否など）は記載しない。
+
 ## {topic}.md の構成
 
-LLM が内容を埋めるセクション。各セクション最大5項目。
+LLM が内容を埋めるセクション。各セクション最大5項目。ただし `## goal-stack`・`## review-stack` は上限なし。
 
 ```markdown
 ---
@@ -35,13 +39,11 @@ topic: {topic}
 updated: {date}
 depends_on:       # 省略可。depended で補足読みされる
   - {topic-a}
-goal_doc:         # 省略可。このトピックの不変ゴール・計画書の絶対パス。load 時に無条件で Read する。
-  /absolute/path/to/plan.md
 ---
 
-## 現在の状態      # 1〜3行。index の summary はここの最初の非空行
-## 決定事項        # 現在も有効な制約・行動ルールもここに集約する
-## 次のアクション
+## goal-stack     # 全体ゴールと完了条件。未完了は `- [ ]`、達成済みは `- [x]`。項目数の上限なし。index の summary は最初の未完了項目、無ければ最後の完了項目のゴール文
+## review-stack   # レビュー待ちの蓄積。taskflow が揮発層の review-stack.md をそのまま写す。項目数の上限なし
+## 決定事項        # 現在も有効な制約・このトピック固有の行動ルールもここに集約する
 ```
 
 完結した決定・古い経緯は context-log に移す。ただし現在も有効な制約は `## 決定事項` から消さない。
@@ -58,7 +60,7 @@ goal_doc:         # 省略可。このトピックの不変ゴール・計画書
 ## コマンド
 
 ### `/memorizer`（引数なし）— 初期化
-`memory/contexts/index.md` を Read し、トピック一覧を表示する。無ければ「コンテキストなし」。
+`$AGENT_PROJECT_DIR/memory/contexts/index.md` を Read し、トピック一覧を表示する。無ければ「コンテキストなし」。
 
 ### `/memorizer new <topic>`
 ```bash
@@ -81,7 +83,7 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
    ```bash
    bash {BASE_DIR}/scripts/handoff-context.sh <parent-topic> <child-topic>
    ```
-2. 子トピック本文には、親の `## 決定事項` と `## 次のアクション` をスナップショットとして写す。子が単体で継続できるようにし、親へのライブ参照には依存しない。
+2. 子トピック本文には、親の `## 決定事項` と `## goal-stack` の未完了項目をスナップショットとして写す。子が単体で継続できるようにし、親へのライブ参照には依存しない。
 3. 子トピックのフロントマターには `depends_on:` で `<parent-topic>` を付ける。`depends_on:` は lazy なポインタで、`/memorizer depended` の補足読み対象になる。依存先の退避はしない。
 
 ### `/memorizer load <topic...>`
@@ -89,11 +91,11 @@ bash {BASE_DIR}/scripts/new-context.sh <topic>
 bash {BASE_DIR}/scripts/load-context.sh <topic...>
 ```
 出力された通常のパスを Read する。depends_on は load では自動で読まない。
-フロントマターに `goal_doc:` があれば、そのファイルを**無条件で Read** してゴールとして採用する。ゴールを固定した上で `## 決定事項`・`## 次のアクション` を実行前提として採用し、その後に要約・一覧提示へ進む。
-`MISSING:<topic>` は `memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
+`## goal-stack` の未完了項目（`- [ ]`）をこのトピックのゴールとして**無条件で採用**する。ゴールを固定した上で `## 決定事項` を実行前提として採用し、その後に要約・一覧提示へ進む。
+`MISSING:<topic>` は `$AGENT_PROJECT_DIR/memory/contexts/archive/` を確認し、あれば復元をユーザーに確認のうえ戻して再ロード、無ければスキップを報告。
 `merged_from` があるトピックは、列挙された旧トピックの `{old}/context-log.md` も context-log として扱う。
 全トピックを3〜5行で要約し、ロードしたトピック一覧を表示する。
-**要約・一覧提示で止めない。** `## 決定事項`・`## 次のアクション`・本文中の前提値（base ブランチ・命名/設計規約・実験の狙い等）を、以後の作業の「実行の前提」として採用する。以降そのセッションでは、context 内で答えが出る事項をユーザーへ聞き返さない（「どこを見るか」が context に書いてあるなら自分で特定する）。実環境（worktree 一覧・別の計画書など）と食い違う場合も、まず context 記載を正として突き合わせてから動き、食い違いの解消をユーザーへ丸投げしない。
+**要約・一覧提示で止めない。** `## 決定事項`・本文中の前提値（base ブランチ・命名/設計規約・実験の狙い等）を、以後の作業の「実行の前提」として採用する。以降そのセッションでは、context 内で答えが出る事項をユーザーへ聞き返さない（「どこを見るか」が context に書いてあるなら自分で特定する）。実環境（worktree 一覧・別の計画書など）と食い違う場合も、まず context 記載を正として突き合わせてから動き、食い違いの解消をユーザーへ丸投げしない。
 ロードしたトピックの内容だけでは明らかに情報が不足している場合、`/memorizer depended <topic>` の実行をユーザーに推奨として提示する。
 モデル判断で自発的に depended を実行して読むことは控えめにするが、必要な場合は許容する。
 

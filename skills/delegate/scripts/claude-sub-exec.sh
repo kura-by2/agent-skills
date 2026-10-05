@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: claude-sub-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
 # 調査/現状把握/設計/トレードオフ比較の委譲用（sub エージェント、書き込み禁止）。
 set -euo pipefail

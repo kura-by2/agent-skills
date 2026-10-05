@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: mark-merged.sh <merged_into> <old_topic...>
 # 旧トピックのフロントマターに merged_into を付与し index を再生成する。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 merged="${1:?Usage: mark-merged.sh <merged_into> <old_topic...>}"
 shift
 

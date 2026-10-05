@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: save-context.sh <topic> <body_file>
-# body_file の内容を ./memory/contexts/<topic>.md に保存し index を再生成する。
+# body_file の内容を $AGENT_PROJECT_DIR/memory/contexts/<topic>.md に保存し index を再生成する。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 today=$(date +%F)
 topic="${1:?Usage: save-context.sh <topic> <body_file>}"
 body="${2:?Usage: save-context.sh <topic> <body_file>}"

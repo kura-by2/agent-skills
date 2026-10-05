@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: claude-review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] [--inputs-dir <dir>]
 # ゴールアライメントレビュー委譲用の薄いラッパ。
 set -euo pipefail
@@ -64,5 +64,12 @@ for ((INDEX = 1; INDEX <= $#; INDEX += 2)); do
   DIFF_INDEX=$((INDEX + 1))
   printf 'goal: %s\ntarget: %s %s\n' "${!INDEX}" "$WORKTREE" "${!DIFF_INDEX}" >> "$TASK_FILE"
 done
+
+cat >> "$TASK_FILE" <<'EOF'
+
+## note
+レビュー対象は各 target の diff 範囲に限ります。
+差分を解釈するために必要ならファイル全文を読んで構いませんが、差分に含まれない既存コードへの指摘はしないでください。
+EOF
 
 exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: scan-skills.sh [targets.md path]
 # existing_assets.skills の相対パスは、実行時の CWD を基準に解決する。
 # existing_assets.skills 配下の SKILL.md 行数と skill-usage.log の最終利用日を集計する。
@@ -7,7 +7,7 @@ set -euo pipefail
 
 BASE_DIR=$(cd "$(dirname "$0")/.." && pwd)
 TARGETS="${1:-$BASE_DIR/targets.md}"
-USAGE_LOG="$BASE_DIR/logs/skill-usage.log"
+USAGE_LOG="${CLAUDE_PROJECT_DIR:?}/logs/skill-usage.log"
 STALE_DAYS=30
 
 if [ ! -f "$TARGETS" ]; then

@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: new-context.sh <topic>
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 topic="${1:?Usage: new-context.sh <topic>}"
 f="$DIR/$topic.md"
 
@@ -20,13 +20,13 @@ updated: $today
 last_loaded: $today
 ---
 
-## 現在の状態
+## goal-stack
+
+
+## review-stack
 
 
 ## 決定事項
-
-
-## 次のアクション
 EOF
 
 bash "$(dirname "$0")/rebuild-index.sh"

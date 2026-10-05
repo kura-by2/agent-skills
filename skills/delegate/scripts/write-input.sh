@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: write-input.sh <task_name> [inputs_dir]   (指示本文は stdin から渡す)
 # delegate の指示ファイルを <inputs_dir>/<task_name>.md に作成するだけの薄いラッパ。
 # enforce-sync-deadline フックで明示許可される「委譲の下準備」専用コマンド。
@@ -22,11 +22,38 @@ OUT="$INPUTS_DIR/${TASK%.md}.md"
 
 BODY=$(cat)
 
-# 適用規約セクションの存在を強制（規約未確認のまま委譲指示が書かれるのを防ぐ）。
-# 規約が無い作業は「## 適用規約」配下に「なし（理由: ...）」と明記すればよい。
-if ! printf '%s' "$BODY" | grep -q '^## 適用規約'; then
-  echo "error: 指示ファイルに『## 適用規約（出典）』セクションがない: $TASK" >&2
-  echo "  規約を確認してから指示を書くこと。規約が無い作業なら『なし（理由: ...）』と明記する。" >&2
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# 既存の同名指示ファイルは検証前にバックアップ名へ退避する。
+# 検証に失敗したとき古い内容が残ると、後続の実行スクリプトがそれを読んで委譲してしまうため。
+if [ -e "$OUT" ] || [ -L "$OUT" ]; then
+  PROJECT_DIR="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
+  if [ -z "$PROJECT_DIR" ]; then
+    PROJECT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)" || true
+  fi
+  MV_SCRIPT="$PROJECT_DIR/.claude/skills/bash/scripts/mv.sh"
+  if [ -z "$PROJECT_DIR" ] || [ ! -r "$MV_SCRIPT" ]; then
+    printf 'error: 既存の指示ファイルを退避できない（bash スキルの mv.sh が見つからない）: %s\n' "$OUT" >&2
+    exit 1
+  fi
+  bash "$MV_SCRIPT" "$OUT" "$OUT.bak-$(date +%Y%m%d-%H%M%S%3N)" >&2
+fi
+TEMPLATE="$SCRIPT_DIR/../inputs/_template.md"
+if [ ! -r "$TEMPLATE" ]; then
+  printf 'error: template is not readable: %s\n' "$TEMPLATE" >&2
+  exit 1
+fi
+
+MISSING_SECTIONS=()
+while IFS= read -r heading; do
+  if ! printf '%s\n' "$BODY" | grep -Fxq "$heading"; then
+    MISSING_SECTIONS+=("$heading")
+  fi
+done < <(grep '^## ' "$TEMPLATE")
+
+if [ "${#MISSING_SECTIONS[@]}" -gt 0 ]; then
+  echo "error: 指示ファイルに必須セクションがない: $TASK" >&2
+  printf '  - %s\n' "${MISSING_SECTIONS[@]}" >&2
   exit 1
 fi
 

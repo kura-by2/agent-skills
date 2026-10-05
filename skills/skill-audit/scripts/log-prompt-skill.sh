@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # UserPromptSubmit: ユーザーがスラッシュコマンドで明示起動したスキルを skill-usage.log に記録する。
 # agent frontmatter では UserPromptSubmit が効かないため settings.json に登録し、
 # main 以外は agent_type で除外して収集対象を main エージェントに揃える。
 # PostToolUse(Skill) はエージェント自発起動を拾い、こちらはユーザー明示起動を拾う（両者は排他）。
-dir="$(dirname "$0")/../logs"
+dir="${CLAUDE_PROJECT_DIR:?}/logs"
 mkdir -p "$dir"
 input=$(cat)
 [ "$(printf '%s' "$input" | jq -r '.agent_type // empty')" = "main" ] || exit 0

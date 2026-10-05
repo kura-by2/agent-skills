@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: model-tier-guidance.sh [codex|claude]
 set -euo pipefail
 

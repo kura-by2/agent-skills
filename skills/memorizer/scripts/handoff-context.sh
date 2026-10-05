@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Usage: handoff-context.sh <parent-topic> <child-topic>
-# 親トピックの決定事項と次のアクションをスナップショットし、次フェーズ用の子トピックを作る。
+# 親トピックの決定事項と goal-stack の未完了項目をスナップショットし、次フェーズ用の子トピックを作る。
 set -euo pipefail
 
-DIR="./memory/contexts"
+source "$(dirname "${BASH_SOURCE[0]}")/context-dir.sh"
 parent="${1:?Usage: handoff-context.sh <parent-topic> <child-topic>}"
 child="${2:?Usage: handoff-context.sh <parent-topic> <child-topic>}"
 parent_file="$DIR/$parent.md"
@@ -17,21 +17,20 @@ today=$(date +%F)
 tmp=$(mktemp)
 
 awk '
+  /^## goal-stack[[:space:]]*$/ { section = "goals"; next }
   /^## 決定事項[[:space:]]*$/ { section = "decisions"; next }
-  /^## 次のアクション[[:space:]]*$/ { section = "actions"; next }
   /^## / { section = ""; next }
+  section == "goals" && /^- \[ \]/ { goals = goals $0 "\n" }
   section == "decisions" { decisions = decisions $0 "\n" }
-  section == "actions" { actions = actions $0 "\n" }
   END {
-    printf("## 現在の状態\n")
-    printf("親トピック `%s` から次フェーズへ引き継いだコンテキスト。\n\n\n", parent)
+    printf("## goal-stack\n")
+    if (goals ~ /[^[:space:]]/) {
+      printf("%s", goals)
+    }
+    printf("\n## review-stack\n\n")
     printf("## 決定事項\n")
     if (decisions ~ /[^[:space:]]/) {
       printf("%s", decisions)
-    }
-    printf("\n## 次のアクション\n")
-    if (actions ~ /[^[:space:]]/) {
-      printf("%s", actions)
     }
   }
 ' parent="$parent" "$parent_file" > "$tmp"
