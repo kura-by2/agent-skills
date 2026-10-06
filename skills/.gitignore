@@ -1,9 +1,13 @@
 *
 !.gitignore
 !delegate
+!delegate-impl
+!delegate-review
+!delegate-sub
 !gh
 !git
 !memorizer
+!model-tiers
 !persist-check
 !preflight
 !skill-audit

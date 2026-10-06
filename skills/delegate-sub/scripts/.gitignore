@@ -1,0 +1,5 @@
+*
+!.gitignore
+!lib.sh
+!claude-sub-exec.sh
+!write-input.sh
