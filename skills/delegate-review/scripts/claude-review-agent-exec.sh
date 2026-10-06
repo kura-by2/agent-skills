@@ -26,8 +26,9 @@ if [ ! -f "$TASK_PATH" ]; then
   exit 1
 fi
 
-# 起動時: model-tiers が1日以上前/不在なら再生成し、review フォールバック（claude の1行）も作る。
-if ! delegate_refresh_tiers_and_fallback review claude; then
+# 委譲前: model-tiers.tsv（別スキルが鮮度管理）が不在なら fail-closed。存在すれば、review
+# フォールバック（claude の1行）が model-tiers より古い/不在のときだけ作り直す。
+if ! delegate_ensure_tiers_and_fallback review claude; then
   printf 'error: delegate review cannot run because no model tier is available (fail-closed)\n' >&2
   exit 1
 fi

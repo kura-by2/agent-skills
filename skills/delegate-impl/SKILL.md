@@ -31,8 +31,8 @@ description: >
 
 プロジェクトルートは `AGENT_PROJECT_DIR` → `CLAUDE_PROJECT_DIR` → カレントの git リポジトリルートの順で解決する。以下の `$AGENT_PROJECT_DIR` 表記はこの解決後のルートを指す。state は `.gitignore` で追跡しない。
 
-- **モデル一覧（`$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv`）**: `backend<TAB>model<TAB>summary` の3列。起動時に最終更新が1日以上前（または不在）なら作り直す。モデル一覧は model-cache（codex: `codex debug models` / claude: 公式 docs Markdown）から退役していない利用可能モデルを取り、各モデルの1行要約を `claude -p --model haiku` で作る。要約に失敗したモデルはキャッシュ上の説明文を使う。キャッシュが1つも無ければ fail-closed（委譲しない）。
-- **フォールバック（`$AGENT_PROJECT_DIR/state/delegate/fallback/impl.tsv`）**: `backend<TAB>model`。model-tiers を作り直したときに生成する。impl は codex の行と claude の行の2行（backend ごとに1問、Jev の choice で判定）。Jev が失敗したら既存ファイルを残す。
+- **モデル一覧（`$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv`）**: `backend<TAB>model<TAB>summary` の3列。委譲の前に、委譲先モデル一覧（model-tiers.tsv）の鮮度を確認・更新するスキルを実行する（必要なら作り直し、新しければそのまま）。このスキルの実行スクリプトは model-tiers.tsv を読むだけで、不在なら fail-closed（委譲しない）。
+- **フォールバック（`$AGENT_PROJECT_DIR/state/delegate/fallback/impl.tsv`）**: `backend<TAB>model`。model-tiers.tsv が自分の `fallback/impl.tsv` より新しい（または fallback が不在）のときに生成する。impl は codex の行と claude の行の2行（backend ごとに1問、Jev の choice で判定）。Jev が失敗したら既存ファイルを残す。
 - **委譲ごとの判定**: 指示ファイル本文を `claude -p --model haiku` で「作業の種類」だけの日本語1文（固有名詞・パス・URL・鍵・コードを含まない）に要約し、その要約を Jev に送って model-tiers の中から使うモデルを choice で判定する。候補は codex と claude 両方。確信度 0.6 未満・鍵なし・HTTP 失敗・3秒超過・要約失敗のときは `fallback/impl.tsv` の1行目を使う。
 - 指示ファイル本文は Jev に送らない（要約のみ）。接続先は `api.typesafe.ai` に固定し、鍵の値と本文はログ・出力に書かない。
 

@@ -3,15 +3,15 @@
 # 各スキルは完全に独立しており、このファイルは他スキルを参照せず自スキル配下だけで完結する。
 #
 # 役割:
-#   - model-tiers.tsv（backend<TAB>model<TAB>summary）の日次再生成
 #   - エージェント別フォールバック fallback/<agent>.tsv（backend<TAB>model）の生成
 #   - 委譲ごとの Jev によるモデル判定（本文は送らず要約のみ）
-#   - モデルキャッシュ（codex: codex debug models / claude: 公式 docs Markdown）の管理
 #   - codex / claude（agent 指定）での委譲実行
 #
+# model-tiers.tsv（モデル一覧）の鮮度判定と再生成は別スキルが担う。委譲の前に、委譲先
+# モデル一覧の鮮度を確認・更新するスキルを実行しておくこと。このファイルは model-tiers.tsv
+# を読むだけで、不在なら fail-closed（委譲しない）。
 # 接続先は api.typesafe.ai に固定する。鍵の値と指示ファイル本文はログ・出力に書かない。
 
-DELEGATE_MAX_AGE_SECONDS="${DELEGATE_MAX_AGE_SECONDS:-86400}" # model-tiers・キャッシュの鮮度（1日）
 DELEGATE_JEV_URL="https://api.typesafe.ai/v1/systemone"      # 固定（上書き不可）
 DELEGATE_JEV_MODEL="jev-latest"
 DELEGATE_JEV_TIMEOUT="${DELEGATE_JEV_TIMEOUT:-3}"
@@ -38,169 +38,6 @@ delegate_state_dir() {
   printf '%s/state/delegate\n' "$project_dir"
 }
 
-delegate_cache_dir() {
-  if [ -n "${DELEGATE_MODEL_CACHE_DIR:-}" ]; then
-    printf '%s\n' "$DELEGATE_MODEL_CACHE_DIR"
-    return 0
-  fi
-  local state_dir
-  state_dir="$(delegate_state_dir)" || return 1
-  printf '%s/.model-cache\n' "$state_dir"
-}
-
-delegate_cache_file_for_backend() {
-  local backend="$1" cache_dir
-  cache_dir="$(delegate_cache_dir)" || return 1
-  printf '%s/%s-models.json\n' "$cache_dir" "$backend"
-}
-
-delegate_is_fresh() {
-  local f="$1" now mtime
-  [ -f "$f" ] || return 1
-  now="$(date +%s)"
-  mtime="$(date -r "$f" +%s 2>/dev/null)" || return 1
-  [ "$((now - mtime))" -lt "$DELEGATE_MAX_AGE_SECONDS" ]
-}
-
-delegate_refresh_codex_cache() {
-  local cache_file="$1" tmp_file="$1.tmp" raw_file="$1.raw"
-  local cmd="${DELEGATE_CODEX_MODELS_CMD:-codex debug models}"
-
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'error: jq is required to normalize codex model cache\n' >&2
-    return 1
-  fi
-
-  mkdir -p "$(dirname "$cache_file")"
-  if ! bash -c "$cmd" > "$raw_file"; then
-    rm -f "$raw_file" "$tmp_file"
-    printf 'error: failed to refresh codex model cache with official CLI command: %s\n' "$cmd" >&2
-    return 1
-  fi
-
-  if ! jq -e --arg fetched_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" '
-      {
-        backend: "codex",
-        fetched_at: $fetched_at,
-        source: "codex debug models",
-        models: [ .models[] | select(.visibility == "list") ]
-      }
-    ' "$raw_file" > "$tmp_file"; then
-    rm -f "$raw_file" "$tmp_file"
-    printf 'error: failed to parse codex model catalog\n' >&2
-    return 1
-  fi
-
-  rm -f "$raw_file"
-  mv "$tmp_file" "$cache_file"
-}
-
-delegate_refresh_claude_cache() {
-  local cache_file="$1" tmp_file="$1.tmp"
-  local url="${DELEGATE_CLAUDE_MODELS_URL:-https://platform.claude.com/docs/en/about-claude/models/overview.md}"
-
-  mkdir -p "$(dirname "$cache_file")"
-  if ! curl -fsSL --max-time "${DELEGATE_CLAUDE_MODELS_TIMEOUT:-20}" "$url" > "$tmp_file"; then
-    rm -f "$tmp_file"
-    printf 'error: failed to refresh claude model cache from public official docs: %s\n' "$url" >&2
-    return 1
-  fi
-  if [ ! -s "$tmp_file" ]; then
-    rm -f "$tmp_file"
-    printf 'error: claude model cache refresh returned an empty response: %s\n' "$url" >&2
-    return 1
-  fi
-  mv "$tmp_file" "$cache_file"
-}
-
-# backend のキャッシュを1日鮮度で確保する。再取得に失敗しても既存キャッシュがあれば続行。
-# キャッシュが使える状態なら 0、1件も無ければ 1。
-delegate_try_cache() {
-  local backend="$1" cache_file rc=0
-  cache_file="$(delegate_cache_file_for_backend "$backend")" || return 1
-  if delegate_is_fresh "$cache_file"; then
-    return 0
-  fi
-  case "$backend" in
-    codex) delegate_refresh_codex_cache "$cache_file" || rc=$? ;;
-    claude) delegate_refresh_claude_cache "$cache_file" || rc=$? ;;
-    *) return 1 ;;
-  esac
-  if [ "$rc" -eq 0 ]; then
-    return 0
-  fi
-  if [ -f "$cache_file" ]; then
-    printf 'warning: delegate %s model cache refresh failed; using stale cache from %s\n' \
-      "$backend" "$(date -r "$cache_file" '+%Y-%m-%d')" >&2
-    return 0
-  fi
-  return 1
-}
-
-# キャッシュから退役していない利用可能モデルを "model<TAB>description" で列挙する。
-delegate_catalog_rows() {
-  local backend="$1" cache_file
-  cache_file="$(delegate_cache_file_for_backend "$backend")" || return 1
-  [ -f "$cache_file" ] || return 1
-  case "$backend" in
-    codex)
-      jq -r '
-        .models[]
-        | select(
-            type == "string"
-            or (.upgrade.retirement_at == null)
-            or (((.upgrade.retirement_at | fromdateiso8601?) // 0) > now)
-          )
-        | if type == "string" then "\(.)\t"
-          else "\(.slug)\t\((.description // "") | gsub("[\t\n]"; " "))" end
-      ' "$cache_file"
-      ;;
-    claude)
-      # 公式 docs Markdown のモデル比較表は「列=モデル / 行=属性」。
-      # 「Claude API ID」行から各列のモデル id を取り、その列の他属性を
-      # 「属性: 値」で連結して description にする。退役言及の行は除く。
-      # 表が想定の形式でない（ID 行が無い）場合は何も出さない。
-      awk -F'|' '
-        function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-        function delink(s,  m, txt){
-          while (match(s, /\[[^]]*\]\([^)]*\)/)) {
-            m = substr(s, RSTART, RLENGTH); txt = m
-            sub(/^\[/, "", txt); sub(/\].*/, "", txt)
-            s = substr(s, 1, RSTART - 1) txt substr(s, RSTART + RLENGTH)
-          }
-          return s
-        }
-        /^[ \t]*\|/ {
-          if ($0 ~ /^[ \t]*\|[ :|-]+$/) next
-          nr++
-          labels[nr] = delink(trim($2))
-          ncol = NF - 1
-          for (c = 3; c <= ncol; c++) cell[nr, c] = delink(trim($c))
-          if (tolower(labels[nr]) ~ /claude api id/) idrow = nr
-          next
-        }
-        END {
-          if (idrow == "") exit
-          for (c = 3; c <= ncol; c++) {
-            id = cell[idrow, c]; gsub(/`/, "", id)
-            if (id == "") continue
-            desc = ""
-            for (r = 2; r <= nr; r++) {
-              if (r == idrow || labels[r] == "") continue
-              if (tolower(labels[r]) ~ /deprecat|retir/) continue
-              v = cell[r, c]; if (v == "") continue
-              desc = desc (desc == "" ? "" : "; ") labels[r] ": " v
-            }
-            gsub(/\t/, " ", desc)
-            print id "\t" desc
-          }
-        }
-      ' "$cache_file"
-      ;;
-    *) return 1 ;;
-  esac
-}
-
 # 要約専用に claude を隔離実行する。呼び出し元プロジェクトの設定・hooks・MCP ツール・
 # CLAUDE.md を読み込ませない（空の作業ディレクトリ・setting-sources なし・strict-mcp-config）。
 delegate_summary_llm() {
@@ -223,49 +60,6 @@ delegate_summary_ok() {
     *申し訳*|*できません*|*ありません*|*わかりません*|*知識*) return 1 ;;
   esac
   return 0
-}
-
-# モデル1件の1行要約を隔離した claude -p --model haiku で作る。
-# 根拠はキャッシュの説明文（参考情報）だけに限る。応答が要約として不正なら description を使う。
-delegate_summarize_model() {
-  local backend="$1" model="$2" desc="$3" raw="" out=""
-  if [ "${DELEGATE_SKIP_LLM:-}" != "1" ]; then
-    raw="$(delegate_summary_llm "次のモデルの用途・特徴を、与えた参考情報だけを根拠に日本語で簡潔に1行（60文字以内）で説明してください。あなた自身の知識で補わず、参考情報が乏しくても推測で補足しないこと。説明文のみを返し、改行や箇条書きを含めないこと。backend=${backend} model=${model} 参考情報=${desc}")" || raw=""
-    if delegate_summary_ok "$raw"; then
-      out="$(printf '%s' "$raw" | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')"
-    fi
-  fi
-  if [ -z "$out" ]; then
-    out="$(printf '%s' "$desc" | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')"
-  fi
-  [ -n "$out" ] || out="$model"
-  printf '%s\n' "$out"
-}
-
-# model-tiers.tsv を再生成する。backend ごとにキャッシュを確保して退役していないモデルを列挙し、
-# 各モデルの1行要約を付ける。1件のキャッシュも無ければ fail-closed（非0）。
-delegate_rebuild_model_tiers() {
-  local tiers_file="$1"; shift
-  local backends=("$@")
-  local tmp backend model desc summary any=0
-  tmp="$(mktemp)"
-  printf '# backend\tmodel\tsummary\n' > "$tmp"
-  for backend in "${backends[@]}"; do
-    delegate_try_cache "$backend" || continue
-    while IFS=$'\t' read -r model desc; do
-      [ -n "$model" ] || continue
-      summary="$(delegate_summarize_model "$backend" "$model" "$desc")"
-      printf '%s\t%s\t%s\n' "$backend" "$model" "$summary" >> "$tmp"
-      any=1
-    done < <(delegate_catalog_rows "$backend")
-  done
-  if [ "$any" -eq 0 ]; then
-    rm -f "$tmp"
-    printf 'error: delegate cannot rebuild model-tiers because no model cache is available\n' >&2
-    return 1
-  fi
-  mkdir -p "$(dirname "$tiers_file")"
-  mv "$tmp" "$tiers_file"
 }
 
 # model-tiers から指定 backend 群の model->summary を JSON object にする（Jev の criteria）。
@@ -374,10 +168,10 @@ delegate_rebuild_fallback() {
   mv "$tmp" "$fallback_file"
 }
 
-# 起動時処理: model-tiers が1日以上前（または不在）なら両 backend で再生成し、
-# 同時にこの agent のフォールバック（候補 backend 分）だけを作る。
-# model-tiers が利用可能なら 0、無く再生成も失敗したら 1（fail-closed）。
-delegate_refresh_tiers_and_fallback() {
+# 委譲前処理: model-tiers.tsv が不在なら fail-closed（非0）。存在すれば、この agent の
+# fallback が model-tiers.tsv より古い（または不在）ときだけ、フォールバック（候補 backend
+# 分）を Jev で作り直す。model-tiers.tsv の鮮度確認・再生成は別スキルの担当。
+delegate_ensure_tiers_and_fallback() {
   local agent="$1"; shift
   local fb_backends=("$@")
   local state_dir tiers_file fallback_file
@@ -385,17 +179,15 @@ delegate_refresh_tiers_and_fallback() {
   tiers_file="$state_dir/model-tiers.tsv"
   fallback_file="$state_dir/fallback/$agent.tsv"
 
-  if delegate_is_fresh "$tiers_file"; then
-    return 0
-  fi
-
-  if ! delegate_rebuild_model_tiers "$tiers_file" codex claude; then
-    [ -f "$tiers_file" ] && return 0
+  if [ ! -f "$tiers_file" ]; then
+    printf 'error: delegate requires model-tiers.tsv; run the model-tiers refresh skill before delegating\n' >&2
     return 1
   fi
 
-  if ! delegate_rebuild_fallback "$agent" "$tiers_file" "$fallback_file" "${fb_backends[@]}"; then
-    printf 'warning: delegate could not rebuild fallback for %s via Jev (keeping existing)\n' "$agent" >&2
+  if [ "$tiers_file" -nt "$fallback_file" ]; then
+    if ! delegate_rebuild_fallback "$agent" "$tiers_file" "$fallback_file" "${fb_backends[@]}"; then
+      printf 'warning: delegate could not rebuild fallback for %s via Jev (keeping existing)\n' "$agent" >&2
+    fi
   fi
   return 0
 }
