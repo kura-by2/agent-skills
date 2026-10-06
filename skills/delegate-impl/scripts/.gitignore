@@ -1,0 +1,5 @@
+*
+!.gitignore
+!lib.sh
+!impl-exec.sh
+!write-input.sh
