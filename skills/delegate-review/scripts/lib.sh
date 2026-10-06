@@ -17,6 +17,7 @@ DELEGATE_JEV_MODEL="jev-latest"
 DELEGATE_JEV_TIMEOUT="${DELEGATE_JEV_TIMEOUT:-3}"
 DELEGATE_JEV_CONFIDENCE_MIN="0.6"
 DELEGATE_SUMMARY_MODEL="${DELEGATE_SUMMARY_MODEL:-haiku}"
+DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレース用）
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -178,13 +179,39 @@ delegate_catalog_rows() {
   esac
 }
 
-# モデル1件の1行要約を claude -p --model haiku で作る。失敗・空なら description を使う。
+# 要約専用に claude を隔離実行する。呼び出し元プロジェクトの設定・hooks・MCP ツール・
+# CLAUDE.md を読み込ませない（空の作業ディレクトリ・setting-sources なし・strict-mcp-config）。
+delegate_summary_llm() {
+  local prompt="$1" workdir rc
+  workdir="$(mktemp -d)" || return 1
+  ( cd "$workdir" && claude -p "$prompt" --model "$DELEGATE_SUMMARY_MODEL" \
+      --setting-sources '' --strict-mcp-config < /dev/null 2>/dev/null )
+  rc=$?
+  rmdir "$workdir" 2>/dev/null || true
+  return "$rc"
+}
+
+# 応答が1行要約として妥当か判定する。空・複数行・長すぎ・拒否文は不正（非0）。
+delegate_summary_ok() {
+  local raw="$1"
+  [ -n "$raw" ] || return 1
+  case "$raw" in *$'\n'*) return 1 ;; esac
+  [ "${#raw}" -le 120 ] || return 1
+  case "$raw" in
+    *申し訳*|*できません*|*ありません*|*わかりません*|*知識*) return 1 ;;
+  esac
+  return 0
+}
+
+# モデル1件の1行要約を隔離した claude -p --model haiku で作る。
+# 根拠はキャッシュの説明文（参考情報）だけに限る。応答が要約として不正なら description を使う。
 delegate_summarize_model() {
-  local backend="$1" model="$2" desc="$3" out=""
+  local backend="$1" model="$2" desc="$3" raw="" out=""
   if [ "${DELEGATE_SKIP_LLM:-}" != "1" ]; then
-    out="$(claude -p "次のモデルの用途・特徴を日本語で簡潔に1行（60文字以内）で説明してください。説明文のみを返し、改行や箇条書きを含めないこと。backend=${backend} model=${model} 参考情報=${desc}" \
-      --model "$DELEGATE_SUMMARY_MODEL" < /dev/null 2>/dev/null \
-      | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')" || out=""
+    raw="$(delegate_summary_llm "次のモデルの用途・特徴を、与えた参考情報だけを根拠に日本語で簡潔に1行（60文字以内）で説明してください。あなた自身の知識で補わず、参考情報が乏しくても推測で補足しないこと。説明文のみを返し、改行や箇条書きを含めないこと。backend=${backend} model=${model} 参考情報=${desc}")" || raw=""
+    if delegate_summary_ok "$raw"; then
+      out="$(printf '%s' "$raw" | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')"
+    fi
   fi
   if [ -z "$out" ]; then
     out="$(printf '%s' "$desc" | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')"
@@ -240,25 +267,38 @@ delegate_criteria_json() {
 # 標準出力に "choice<TAB>confidence"。鍵なし・criteria 空・HTTP 失敗・タイムアウト・解釈失敗は非0。
 delegate_jev_choice() {
   local summary="$1" criteria_json="$2" instructions="$3"
-  local key body resp
+  local key body resp rc out
+  DELEGATE_JEV_LAST_ERROR=""
   key="${JEV_API_KEY:-}"
-  [ -n "$key" ] || return 1
-  [ -n "$criteria_json" ] && [ "$criteria_json" != "{}" ] || return 1
-  body="$(jq -n --arg state "$summary" --arg model "$DELEGATE_JEV_MODEL" \
+  if [ -z "$key" ]; then DELEGATE_JEV_LAST_ERROR="no_key"; return 1; fi
+  if [ -z "$criteria_json" ] || [ "$criteria_json" = "{}" ]; then
+    DELEGATE_JEV_LAST_ERROR="none"; return 1
+  fi
+  if ! body="$(jq -n --arg state "$summary" --arg model "$DELEGATE_JEV_MODEL" \
     --arg instr "$instructions" --argjson criteria "$criteria_json" '
     {
       state: $state,
       model: $model,
       questions: { route: { type: "choice", instructions: $instr, criteria: $criteria } }
-    }')" || return 1
+    }')"; then
+    DELEGATE_JEV_LAST_ERROR="http_error"; return 1
+  fi
   resp="$(curl -fsS --max-time "$DELEGATE_JEV_TIMEOUT" \
     -H "Authorization: Bearer $key" -H 'Content-Type: application/json' \
-    -X POST "$DELEGATE_JEV_URL" -d "$body" 2>/dev/null)" || return 1
-  printf '%s' "$resp" | jq -e -r '
+    -X POST "$DELEGATE_JEV_URL" -d "$body" 2>/dev/null)"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$rc" -eq 28 ]; then DELEGATE_JEV_LAST_ERROR="timeout"; else DELEGATE_JEV_LAST_ERROR="http_error"; fi
+    return 1
+  fi
+  if ! out="$(printf '%s' "$resp" | jq -e -r '
     .answers.route
     | select(.choice != null and (.confidence | type) == "number")
     | "\(.choice)\t\(.confidence)"
-  ' 2>/dev/null
+  ' 2>/dev/null)"; then
+    DELEGATE_JEV_LAST_ERROR="http_error"; return 1
+  fi
+  printf '%s\n' "$out"
 }
 
 delegate_confidence_ok() {
@@ -278,17 +318,29 @@ delegate_backend_from_model() {
 # agent 用フォールバックを Jev で再生成する。backend ごとに1問判定して backend<TAB>model を書く。
 # Jev が1行も返さなければ非0を返し、既存ファイルは上書きしない。
 delegate_rebuild_fallback() {
-  local tiers_file="$1" fallback_file="$2"; shift 2
+  local agent="$1" tiers_file="$2" fallback_file="$3"; shift 3
   local backends=("$@")
   local tmp backend criteria out choice conf wrote=0
   tmp="$(mktemp)"
   for backend in "${backends[@]}"; do
-    criteria="$(delegate_criteria_json "$tiers_file" "$backend")" || continue
-    [ -n "$criteria" ] && [ "$criteria" != "{}" ] || continue
-    out="$(delegate_jev_choice "作業全般に標準的に使うモデルを1つ選ぶ。" "$criteria" \
-      "この backend の既定として最も適したモデルを選ぶ。")" || continue
+    criteria="$(delegate_criteria_json "$tiers_file" "$backend")" || criteria=""
+    if [ -z "$criteria" ] || [ "$criteria" = "{}" ]; then
+      printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
+      continue
+    fi
+    if ! out="$(delegate_jev_choice "作業全般に標準的に使うモデルを1つ選ぶ。" "$criteria" \
+      "この backend の既定として最も適したモデルを選ぶ。")"; then
+      printf 'delegate %s fallback-gen: backend=%s source=none reason=%s\n' \
+        "$agent" "$backend" "${DELEGATE_JEV_LAST_ERROR:-none}" >&2
+      continue
+    fi
     IFS=$'\t' read -r choice conf <<< "$out"
-    [ -n "$choice" ] || continue
+    if [ -z "$choice" ]; then
+      printf 'delegate %s fallback-gen: backend=%s source=none reason=http_error\n' "$agent" "$backend" >&2
+      continue
+    fi
+    printf 'delegate %s fallback-gen: backend=%s model=%s source=jev confidence=%s\n' \
+      "$agent" "$backend" "$choice" "$conf" >&2
     printf '%s\t%s\n' "$backend" "$choice" >> "$tmp"
     wrote=1
   done
@@ -320,7 +372,7 @@ delegate_refresh_tiers_and_fallback() {
     return 1
   fi
 
-  if ! delegate_rebuild_fallback "$tiers_file" "$fallback_file" "${fb_backends[@]}"; then
+  if ! delegate_rebuild_fallback "$agent" "$tiers_file" "$fallback_file" "${fb_backends[@]}"; then
     printf 'warning: delegate could not rebuild fallback for %s via Jev (keeping existing)\n' "$agent" >&2
   fi
   return 0
@@ -329,13 +381,14 @@ delegate_refresh_tiers_and_fallback() {
 # 指示ファイル本文を claude -p --model haiku で「作業の種類」だけの日本語1文に要約する。
 # 固有名詞・パス・URL・鍵・コードを含めない。失敗・空は非0。
 delegate_summarize_task() {
-  local task_path="$1" out
+  local task_path="$1" raw out
   [ -f "$task_path" ] || return 1
   [ "${DELEGATE_SKIP_LLM:-}" != "1" ] || return 1
-  out="$(claude -p "次の委譲指示を日本語1文で要約してください。出力は『どんな種類の作業か（作業の種類と対象の種別）』だけにし、固有名詞・ファイルパス・URL・識別子・鍵・コード・引用された文字列は一切含めないこと。要約文のみを返すこと。
+  raw="$(delegate_summary_llm "次の委譲指示を日本語1文で要約してください。出力は『どんな種類の作業か（作業の種類と対象の種別）』だけにし、固有名詞・ファイルパス・URL・識別子・鍵・コード・引用された文字列は一切含めないこと。要約文のみを返すこと。
 
-$(cat "$task_path")" --model "$DELEGATE_SUMMARY_MODEL" < /dev/null 2>/dev/null \
-    | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')" || return 1
+$(cat "$task_path")")" || return 1
+  delegate_summary_ok "$raw" || return 1
+  out="$(printf '%s' "$raw" | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')"
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
 }
@@ -366,25 +419,41 @@ delegate_fallback_model() {
 delegate_resolve_model() {
   local agent="$1" task_path="$2"; shift 2
   local backends=("$@")
-  local state_dir tiers_file summary criteria out choice conf backend
+  local state_dir tiers_file summary criteria out choice conf backend reason="none" fb fb_model
   state_dir="$(delegate_state_dir)" || return 1
   tiers_file="$state_dir/model-tiers.tsv"
 
-  if [ -f "$tiers_file" ] && [ -n "${JEV_API_KEY:-}" ]; then
-    if summary="$(delegate_summarize_task "$task_path")"; then
-      criteria="$(delegate_criteria_json "$tiers_file" "${backends[@]}")" || criteria="{}"
-      if [ -n "$criteria" ] && [ "$criteria" != "{}" ]; then
-        if out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。")"; then
-          IFS=$'\t' read -r choice conf <<< "$out"
-          if delegate_confidence_ok "$conf" && backend="$(delegate_backend_from_model "$choice")"; then
-            printf '%s\t%s\n' "$backend" "$choice"
-            return 0
-          fi
-        fi
+  if [ ! -f "$tiers_file" ]; then
+    reason="none"
+  elif [ -z "${JEV_API_KEY:-}" ]; then
+    reason="no_key"
+  elif ! summary="$(delegate_summarize_task "$task_path")"; then
+    reason="summary_failed"
+  else
+    criteria="$(delegate_criteria_json "$tiers_file" "${backends[@]}")" || criteria="{}"
+    if [ -z "$criteria" ] || [ "$criteria" = "{}" ]; then
+      reason="none"
+    elif ! out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。")"; then
+      reason="${DELEGATE_JEV_LAST_ERROR:-http_error}"
+    else
+      IFS=$'\t' read -r choice conf <<< "$out"
+      if ! delegate_confidence_ok "$conf"; then
+        reason="low_confidence"
+      elif ! backend="$(delegate_backend_from_model "$choice")"; then
+        reason="http_error"
+      else
+        printf 'delegate %s: model=%s source=jev confidence=%s\n' "$agent" "$choice" "$conf" >&2
+        printf '%s\t%s\n' "$backend" "$choice"
+        return 0
       fi
     fi
   fi
-  delegate_fallback_model "$agent"
+
+  fb="$(delegate_fallback_model "$agent")" || fb=""
+  fb_model="$(printf '%s' "$fb" | cut -f2)"
+  printf 'delegate %s: model=%s source=fallback reason=%s\n' "$agent" "${fb_model:-none}" "$reason" >&2
+  [ -n "$fb" ] || return 1
+  printf '%s\n' "$fb"
 }
 
 # selected_context_file（1行1パス）から CONTEXT_PROMPT と ADD_DIRS を名前渡しで埋める。
