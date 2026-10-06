@@ -27,16 +27,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # 既存の同名指示ファイルは検証前にバックアップ名へ退避する。
 # 検証に失敗したとき古い内容が残ると、後続の実行スクリプトがそれを読んで委譲してしまうため。
 if [ -e "$OUT" ] || [ -L "$OUT" ]; then
-  PROJECT_DIR="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
-  if [ -z "$PROJECT_DIR" ]; then
-    PROJECT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)" || true
-  fi
-  MV_SCRIPT="$PROJECT_DIR/.claude/skills/bash/scripts/mv.sh"
-  if [ -z "$PROJECT_DIR" ] || [ ! -r "$MV_SCRIPT" ]; then
-    printf 'error: 既存の指示ファイルを退避できない（bash スキルの mv.sh が見つからない）: %s\n' "$OUT" >&2
-    exit 1
-  fi
-  bash "$MV_SCRIPT" "$OUT" "$OUT.bak-$(date +%Y%m%d-%H%M%S%3N)" >&2
+  mv -- "$OUT" "$OUT.bak-$(date +%Y%m%d-%H%M%S%3N)" >&2
 fi
 TEMPLATE="$SCRIPT_DIR/../inputs/_template.md"
 if [ ! -r "$TEMPLATE" ]; then
