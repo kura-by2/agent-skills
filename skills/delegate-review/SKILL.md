@@ -34,6 +34,15 @@ review エージェントは書き込み不可。修正・改善の実装はさ�
 
 実行スクリプトは、スキル起動時に示されるベースディレクトリ（"Base directory for this skill: ..."）を使って実行する。指示ファイルは呼び出し元が指定した inputs ディレクトリに生成する（未指定時は `/tmp/delegate-inputs/`）。
 
+goal ファイルの作成は `scripts/write-input.sh <task_name> [inputs_dir]`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。review の goal は自由記述のため必須セクション検査は課さない。作成先ディレクトリは呼び出し元が指定でき、未指定時は `/tmp/delegate-inputs/` に作成する。作成した goal ファイルを `review-exec.sh` / `review-files-exec.sh` の `<goal_file>` に渡す。
+
+```bash
+INPUTS_DIR=/tmp/delegate-inputs
+bash {BASE_DIR}/scripts/write-input.sh <goal_task> "$INPUTS_DIR" <<'EOF'
+<goal 本文>
+EOF
+```
+
 ```bash
 INPUTS_DIR=/tmp/delegate-inputs
 mkdir -p "$INPUTS_DIR"

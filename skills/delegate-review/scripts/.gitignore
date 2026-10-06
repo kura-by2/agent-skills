@@ -4,3 +4,4 @@
 !review-agent-exec.sh
 !review-exec.sh
 !review-files-exec.sh
+!write-input.sh
