@@ -8,8 +8,8 @@
 #   - 委譲ごとの Jev によるモデル判定（本文は送らず要約のみ）
 #   - codex / claude（agent 指定）での委譲実行
 #
-# model-tiers.tsv（モデル一覧）の鮮度判定と再生成は別スキルが担う。委譲の前に、委譲先
-# モデル一覧の鮮度を確認・更新するスキルを実行しておくこと。このファイルは model-tiers.tsv
+# delegate-models.tsv（モデル一覧）の鮮度判定と再生成は別スキルが担う。委譲の前に、委譲先
+# モデル一覧の鮮度を確認・更新するスキルを実行しておくこと。このファイルは delegate-models.tsv
 # を読むだけで、不在なら fail-closed（委譲しない）。
 # 接続先は api.typesafe.ai に固定する。鍵の値と指示ファイル本文はログ・出力に書かない。
 
@@ -53,7 +53,7 @@ delegate_summary_ok() {
   return 0
 }
 
-# model-tiers から指定 backend 群の model->summary を "名前<TAB>説明" の行にする（Jev の criteria）。
+# delegate-models から指定 backend 群の model->summary を "名前<TAB>説明" の行にする（Jev の criteria）。
 delegate_criteria_tsv() {
   local tiers_file="$1"; shift
   local filter
@@ -137,19 +137,19 @@ delegate_rebuild_fallback() {
   mv "$tmp" "$fallback_file"
 }
 
-# 委譲前処理: model-tiers.tsv が不在なら fail-closed（非0）。存在すれば、この agent の
-# fallback が model-tiers.tsv より古い（または不在）ときだけ、フォールバック（候補 backend
-# 分）を Jev で作り直す。model-tiers.tsv の鮮度確認・再生成は別スキルの担当。
+# 委譲前処理: delegate-models.tsv が不在なら fail-closed（非0）。存在すれば、この agent の
+# fallback が delegate-models.tsv より古い（または不在）ときだけ、フォールバック（候補 backend
+# 分）を Jev で作り直す。delegate-models.tsv の鮮度確認・再生成は別スキルの担当。
 delegate_ensure_tiers_and_fallback() {
   local agent="$1"; shift
   local fb_backends=("$@")
   local state_dir tiers_file fallback_file
   state_dir="$(delegate_state_dir)" || return 1
-  tiers_file="$state_dir/model-tiers.tsv"
+  tiers_file="$state_dir/delegate-models.tsv"
   fallback_file="$state_dir/fallback/$agent.tsv"
 
   if [ ! -f "$tiers_file" ]; then
-    printf 'error: delegate requires model-tiers.tsv; run the model-tiers refresh skill before delegating\n' >&2
+    printf 'error: delegate requires delegate-models.tsv; run the delegate-models refresh skill before delegating\n' >&2
     return 1
   fi
 
@@ -204,7 +204,7 @@ delegate_resolve_model() {
   local backends=("$@")
   local state_dir tiers_file summary criteria out choice conf backend reason="none" fb fb_model
   state_dir="$(delegate_state_dir)" || return 1
-  tiers_file="$state_dir/model-tiers.tsv"
+  tiers_file="$state_dir/delegate-models.tsv"
 
   if [ ! -f "$tiers_file" ]; then
     reason="none"

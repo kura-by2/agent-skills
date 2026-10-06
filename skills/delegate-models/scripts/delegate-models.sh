@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# model-tiers スキルの実行基盤。
-# 委譲先モデル一覧 model-tiers.tsv（backend<TAB>model<TAB>summary）の鮮度判定と再生成を担う。
+# delegate-models スキルの実行基盤。
+# 委譲先モデル一覧 delegate-models.tsv（backend<TAB>model<TAB>summary）の鮮度判定と再生成を担う。
 # このスキルは完全に独立しており、他スキルを参照せず自スキル配下だけで完結する。
 #
 # 役割:
-#   - model-tiers.tsv の日次再生成（1日以上前/不在のときだけ作り直す）
+#   - delegate-models.tsv の日次再生成（1日以上前/不在のときだけ作り直す）
 #   - モデルキャッシュ（codex: codex debug models / claude: 公式 docs Markdown）の管理
 #   - 各モデルの1行要約を設定から隔離した claude -p --model haiku で作成
 #
 # 接続先は api.typesafe.ai 等の外部に鍵・本文を送らない。要約には隔離した claude を使う。
 set -euo pipefail
 
-DELEGATE_MAX_AGE_SECONDS="${DELEGATE_MAX_AGE_SECONDS:-86400}" # model-tiers・キャッシュの鮮度（1日）
+DELEGATE_MAX_AGE_SECONDS="${DELEGATE_MAX_AGE_SECONDS:-86400}" # delegate-models・キャッシュの鮮度（1日）
 DELEGATE_SUMMARY_MODEL="${DELEGATE_SUMMARY_MODEL:-haiku}"
 
 # リポジトリ直下の共通スクリプト群。スキルが symlink 経由で呼ばれても実体から解決する。
@@ -222,7 +222,7 @@ delegate_summarize_model() {
   printf '%s\n' "$out"
 }
 
-# model-tiers.tsv を再生成する。backend ごとにキャッシュを確保して退役していないモデルを列挙し、
+# delegate-models.tsv を再生成する。backend ごとにキャッシュを確保して退役していないモデルを列挙し、
 # 各モデルの1行要約を付ける。1件のキャッシュも無ければ fail-closed（非0）。
 delegate_rebuild_model_tiers() {
   local tiers_file="$1"; shift
@@ -241,22 +241,22 @@ delegate_rebuild_model_tiers() {
   done
   if [ "$any" -eq 0 ]; then
     rm -f "$tmp"
-    printf 'error: delegate cannot rebuild model-tiers because no model cache is available\n' >&2
+    printf 'error: delegate cannot rebuild delegate-models because no model cache is available\n' >&2
     return 1
   fi
   mkdir -p "$(dirname "$tiers_file")"
   mv "$tmp" "$tiers_file"
 }
 
-# 起動時処理: model-tiers が1日以上前（または不在）なら両 backend で再生成し、
-# 新しければ何もしない。model-tiers が利用可能なら 0、無く再生成も失敗したら 1（fail-closed）。
+# 起動時処理: delegate-models が1日以上前（または不在）なら両 backend で再生成し、
+# 新しければ何もしない。delegate-models が利用可能なら 0、無く再生成も失敗したら 1（fail-closed）。
 delegate_refresh_model_tiers() {
   local state_dir tiers_file
   state_dir="$(delegate_state_dir)" || return 1
-  tiers_file="$state_dir/model-tiers.tsv"
+  tiers_file="$state_dir/delegate-models.tsv"
 
   if delegate_is_fresh "$tiers_file"; then
-    printf 'model-tiers: fresh (%s); nothing to do\n' "$(date -r "$tiers_file" '+%Y-%m-%d')" >&2
+    printf 'delegate-models: fresh (%s); nothing to do\n' "$(date -r "$tiers_file" '+%Y-%m-%d')" >&2
     return 0
   fi
 
@@ -264,7 +264,7 @@ delegate_refresh_model_tiers() {
     [ -f "$tiers_file" ] && return 0
     return 1
   fi
-  printf 'model-tiers: rebuilt %s\n' "$tiers_file" >&2
+  printf 'delegate-models: rebuilt %s\n' "$tiers_file" >&2
   return 0
 }
 

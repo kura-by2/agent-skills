@@ -27,8 +27,8 @@ if [ ! -f "$TASK_PATH" ]; then
   exit 1
 fi
 
-# 委譲前: model-tiers.tsv（別スキルが鮮度管理）が不在なら fail-closed。存在すれば、impl
-# フォールバック（codex・claude の2行）が model-tiers より古い/不在のときだけ作り直す。
+# 委譲前: delegate-models.tsv（別スキルが鮮度管理）が不在なら fail-closed。存在すれば、impl
+# フォールバック（codex・claude の2行）が delegate-models より古い/不在のときだけ作り直す。
 if ! delegate_ensure_tiers_and_fallback impl codex claude; then
   printf 'error: delegate impl cannot run because no model tier is available (fail-closed)\n' >&2
   exit 1
