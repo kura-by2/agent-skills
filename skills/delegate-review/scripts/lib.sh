@@ -17,8 +17,11 @@ DELEGATE_JEV_CONFIDENCE_MIN="0.6"
 DELEGATE_SUMMARY_MODEL="${DELEGATE_SUMMARY_MODEL:-haiku}"
 DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレース用）
 
-# Jev choice 判定の共通スクリプト。スキルが symlink 経由で呼ばれても実体から解決する。
-DELEGATE_JEV_CHOICE_SCRIPT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/jev-choice.sh"
+# リポジトリ直下の共通スクリプト群。スキルが symlink 経由で呼ばれても実体から解決する。
+DELEGATE_SCRIPTS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts"
+DELEGATE_JEV_CHOICE_SCRIPT="$DELEGATE_SCRIPTS_DIR/jev-choice.sh"
+DELEGATE_PROJECT_ROOT_SCRIPT="$DELEGATE_SCRIPTS_DIR/project-root.sh"
+DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize.sh"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -28,27 +31,14 @@ delegate_mark_sync_deadline_delegate() {
 }
 
 delegate_state_dir() {
-  local project_dir="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
-  if [ -z "$project_dir" ]; then
-    project_dir="$(git rev-parse --show-toplevel 2>/dev/null)" || true
-  fi
-  if [ -z "$project_dir" ]; then
-    printf 'error: unable to resolve project root from AGENT_PROJECT_DIR, CLAUDE_PROJECT_DIR, or the current git repository\n' >&2
-    return 1
-  fi
+  local project_dir
+  project_dir="$("$DELEGATE_PROJECT_ROOT_SCRIPT")" || return 1
   printf '%s/state/delegate\n' "$project_dir"
 }
 
-# 要約専用に claude を隔離実行する。呼び出し元プロジェクトの設定・hooks・MCP ツール・
-# CLAUDE.md を読み込ませない（空の作業ディレクトリ・setting-sources なし・strict-mcp-config）。
+# 要約専用に claude を隔離実行する共通スクリプトに委ねる。
 delegate_summary_llm() {
-  local prompt="$1" workdir rc
-  workdir="$(mktemp -d)" || return 1
-  ( cd "$workdir" && claude -p "$prompt" --model "$DELEGATE_SUMMARY_MODEL" \
-      --setting-sources '' --strict-mcp-config < /dev/null 2>/dev/null )
-  rc=$?
-  rmdir "$workdir" 2>/dev/null || true
-  return "$rc"
+  "$DELEGATE_SUMMARIZE_SCRIPT" "$1" "$DELEGATE_SUMMARY_MODEL"
 }
 
 # 応答が1行要約として妥当か判定する。空・複数行・長すぎ・拒否文は不正（非0）。
