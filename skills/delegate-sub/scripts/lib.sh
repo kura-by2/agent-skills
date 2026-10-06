@@ -156,21 +156,43 @@ delegate_catalog_rows() {
       ' "$cache_file"
       ;;
     claude)
-      # 公式 docs Markdown は非構造。モデル id を拾い、退役言及のある行は除く。
-      # description はその id が最初に現れた行のテキストを使う。
-      awk '
-        {
-          line = $0
-          if (tolower(line) ~ /deprecat|retir/) next
-          while (match(line, /claude-[a-z]+-[0-9]+(-[0-9]+)?/)) {
-            id = substr(line, RSTART, RLENGTH)
-            if (!(id in seen)) {
-              seen[id] = 1
-              desc = $0
-              gsub(/\t/, " ", desc)
-              print id "\t" desc
+      # 公式 docs Markdown のモデル比較表は「列=モデル / 行=属性」。
+      # 「Claude API ID」行から各列のモデル id を取り、その列の他属性を
+      # 「属性: 値」で連結して description にする。退役言及の行は除く。
+      # 表が想定の形式でない（ID 行が無い）場合は何も出さない。
+      awk -F'|' '
+        function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+        function delink(s,  m, txt){
+          while (match(s, /\[[^]]*\]\([^)]*\)/)) {
+            m = substr(s, RSTART, RLENGTH); txt = m
+            sub(/^\[/, "", txt); sub(/\].*/, "", txt)
+            s = substr(s, 1, RSTART - 1) txt substr(s, RSTART + RLENGTH)
+          }
+          return s
+        }
+        /^[ \t]*\|/ {
+          if ($0 ~ /^[ \t]*\|[ :|-]+$/) next
+          nr++
+          labels[nr] = delink(trim($2))
+          ncol = NF - 1
+          for (c = 3; c <= ncol; c++) cell[nr, c] = delink(trim($c))
+          if (tolower(labels[nr]) ~ /claude api id/) idrow = nr
+          next
+        }
+        END {
+          if (idrow == "") exit
+          for (c = 3; c <= ncol; c++) {
+            id = cell[idrow, c]; gsub(/`/, "", id)
+            if (id == "") continue
+            desc = ""
+            for (r = 2; r <= nr; r++) {
+              if (r == idrow || labels[r] == "") continue
+              if (tolower(labels[r]) ~ /deprecat|retir/) continue
+              v = cell[r, c]; if (v == "") continue
+              desc = desc (desc == "" ? "" : "; ") labels[r] ": " v
             }
-            line = substr(line, RSTART + RLENGTH)
+            gsub(/\t/, " ", desc)
+            print id "\t" desc
           }
         }
       ' "$cache_file"
