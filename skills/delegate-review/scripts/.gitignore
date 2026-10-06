@@ -1,7 +1,7 @@
 *
 !.gitignore
 !lib.sh
-!review-agent-exec.sh
-!review-exec.sh
-!review-files-exec.sh
+!claude-review-agent-exec.sh
+!claude-review-exec.sh
+!claude-review-files-exec.sh
 !write-input.sh

@@ -38,7 +38,7 @@ description: >
 
 ## バックエンド
 
-`impl-exec.sh` は選ばれた backend に応じて codex（`codex exec -C <work_dir>`）か claude（`claude -p --agent impl --model <model>`）を起動する。claude は cwd を変えず、作業対象 worktree・inputs・追加資料ディレクトリを `--add-dir` で渡す。impl エージェントは書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
+`impl-exec.sh` は選ばれた backend に応じて `codex-exec.sh`（`codex exec -C <work_dir>` を起動）か `claude-impl-exec.sh`（`claude -p --agent impl --model <model>` を起動）を呼ぶ。`impl-exec.sh` がモデル判定と2回失敗時の切替を担い、backend ごとの実行はこの2つのスクリプトが行う。claude は cwd を変えず、作業対象 worktree・inputs・追加資料ディレクトリを `--add-dir` で渡す。impl エージェントは書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
 
 ## LLM 切替（impl のみ）
 

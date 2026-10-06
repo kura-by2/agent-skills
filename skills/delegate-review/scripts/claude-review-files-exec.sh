@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Usage: review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]
+# Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]
 # ゴールアライメントレビュー委譲用の薄いラッパ（ファイルパス指定）。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-USAGE='Usage: review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]'
+USAGE='Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]'
 
 DIFF_RANGE=""
 POSITIONAL=()
@@ -102,4 +102,4 @@ git 管理外・新規作成のファイルを含む前提のため、差分は�
 EOF
 fi
 
-exec bash "$SCRIPT_DIR/review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
+exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"

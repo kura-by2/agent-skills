@@ -15,7 +15,7 @@ review エージェントは書き込み不可。修正・改善の実装はさ�
 
 ## 使い方
 
-実行スクリプトを直接呼ぶ。diff 範囲指定は `review-exec.sh`、ファイル指定は `review-files-exec.sh`。
+実行スクリプトを直接呼ぶ。diff 範囲指定は `claude-review-exec.sh`、ファイル指定は `claude-review-files-exec.sh`。
 
 ## モデルの決め方
 
@@ -28,13 +28,13 @@ review エージェントは書き込み不可。修正・改善の実装はさ�
 
 ## バックエンド
 
-`review-agent-exec.sh` は claude（`claude -p --agent review --model <model>`）を起動する。cwd は変えず、作業対象 worktree・inputs・追加資料ディレクトリを `--add-dir` で渡す。review エージェントは Edit/Write/MultiEdit を禁止する。指示ファイルは `review-exec.sh` / `review-files-exec.sh` が生成する。
+`claude-review-agent-exec.sh` は claude（`claude -p --agent review --model <model>`）を起動する。cwd は変えず、作業対象 worktree・inputs・追加資料ディレクトリを `--add-dir` で渡す。review エージェントは Edit/Write/MultiEdit を禁止する。指示ファイルは `claude-review-exec.sh` / `claude-review-files-exec.sh` が生成する。
 
 ## 実行コマンド
 
 実行スクリプトは、スキル起動時に示されるベースディレクトリ（"Base directory for this skill: ..."）を使って実行する。指示ファイルは呼び出し元が指定した inputs ディレクトリに生成する（未指定時は `/tmp/delegate-inputs/`）。
 
-goal ファイルの作成は `scripts/write-input.sh <task_name> [inputs_dir]`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。review の goal は自由記述のため必須セクション検査は課さない。作成先ディレクトリは呼び出し元が指定でき、未指定時は `/tmp/delegate-inputs/` に作成する。作成した goal ファイルを `review-exec.sh` / `review-files-exec.sh` の `<goal_file>` に渡す。
+goal ファイルの作成は `scripts/write-input.sh <task_name> [inputs_dir]`（本文は stdin）を使う。汎用 Write/cat は sync 締切フックで止まるが、この専用ラッパは「委譲の下準備」として明示許可される。review の goal は自由記述のため必須セクション検査は課さない。作成先ディレクトリは呼び出し元が指定でき、未指定時は `/tmp/delegate-inputs/` に作成する。作成した goal ファイルを `claude-review-exec.sh` / `claude-review-files-exec.sh` の `<goal_file>` に渡す。
 
 ```bash
 INPUTS_DIR=/tmp/delegate-inputs
@@ -46,13 +46,13 @@ EOF
 ```bash
 INPUTS_DIR=/tmp/delegate-inputs
 mkdir -p "$INPUTS_DIR"
-bash {BASE_DIR}/scripts/review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] --inputs-dir "$INPUTS_DIR"
-bash {BASE_DIR}/scripts/review-files-exec.sh <worktree> <goal_file> <files> "$INPUTS_DIR" [--range <diff_range>]
+bash {BASE_DIR}/scripts/claude-review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] --inputs-dir "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-review-files-exec.sh <worktree> <goal_file> <files> "$INPUTS_DIR" [--range <diff_range>]
 ```
 
-`review-exec.sh` は同一 worktree の `<goal_file> <diff_range>` 対を1組以上受け取り、対ごとに review エージェント用の指示ファイルを生成して `review-agent-exec.sh` に渡す。inputs ディレクトリは末尾の `--inputs-dir <dir>` で指定する。従来の単一ペアに限り、第4引数の inputs ディレクトリ指定と `diff_range` 省略時の `HEAD` も使える。`HEAD` は追跡済みファイルの未コミット変更のみが対象で、未追跡ファイルは差分に出ないため `review-files-exec.sh` を使う。コミット済み変更は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は同一 worktree の `<goal_file> <diff_range>` 対を1組以上受け取り、対ごとに review エージェント用の指示ファイルを生成して `claude-review-agent-exec.sh` に渡す。inputs ディレクトリは末尾の `--inputs-dir <dir>` で指定する。従来の単一ペアに限り、第4引数の inputs ディレクトリ指定と `diff_range` 省略時の `HEAD` も使える。`HEAD` は追跡済みファイルの未コミット変更のみが対象で、未追跡ファイルは差分に出ないため `claude-review-files-exec.sh` を使う。コミット済み変更は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
-`review-files-exec.sh` は `<worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]` を受け取る。`--range` を指定すると git 管理下のファイルはその diff 範囲だけがレビュー対象になり、ファイル全文は差分を解釈する文脈としてのみ読ませる。`--range` を省略するとファイル全文がレビュー対象になる。git 管理外・新規作成のファイルは `--range` の有無にかかわらず全文が対象。
+`claude-review-files-exec.sh` は `<worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]` を受け取る。`--range` を指定すると git 管理下のファイルはその diff 範囲だけがレビュー対象になり、ファイル全文は差分を解釈する文脈としてのみ読ませる。`--range` を省略するとファイル全文がレビュー対象になる。git 管理外・新規作成のファイルは `--range` の有無にかかわらず全文が対象。
 
 どちらのスクリプトも、生成する指示ファイルに「差分に含まれない既存コードへの指摘はしない」旨の note を入れる。
 
@@ -60,8 +60,8 @@ Bash 呼び出しは常に `run_in_background: true` を指定する。
 
 ## レビュー対象の受け渡し
 
-- **ブランチを指定する場合**は、そのブランチの起点コミットから最終コミットまでの差分をレビュー対象にする。開始・終了コミットに解決し、`review-exec.sh` に diff_range（例 `main..HEAD`）として渡す。区切りごとの差分だけを渡さない。
-- **ブランチを指定しない場合**は、対象ファイルを明示する。`review-files-exec.sh` にファイルを指定し、git 管理下のファイルなら追加でコミットhash（diff_range）も `--range` で指定する。
+- **ブランチを指定する場合**は、そのブランチの起点コミットから最終コミットまでの差分をレビュー対象にする。開始・終了コミットに解決し、`claude-review-exec.sh` に diff_range（例 `main..HEAD`）として渡す。区切りごとの差分だけを渡さない。
+- **ブランチを指定しない場合**は、対象ファイルを明示する。`claude-review-files-exec.sh` にファイルを指定し、git 管理下のファイルなら追加でコミットhash（diff_range）も `--range` で指定する。
 - レビューを回すために追加でコミットさせない。
 
 ## 失敗時の扱い

@@ -34,7 +34,7 @@ sub エージェントは書き込み不可。コード実装・修正・ファ�
 
 ## バックエンド
 
-`sub-exec.sh` は claude（`claude -p --agent sub --model <model>`）を起動する。cwd は変えず、作業対象 worktree・inputs・追加資料ディレクトリを `--add-dir` で渡す。sub エージェントは Edit/Write/MultiEdit を禁止する。
+`claude-sub-exec.sh` は claude（`claude -p --agent sub --model <model>`）を起動する。cwd は変えず、作業対象 worktree・inputs・追加資料ディレクトリを `--add-dir` で渡す。sub エージェントは Edit/Write/MultiEdit を禁止する。
 
 ## 渡すべき情報
 
@@ -68,10 +68,10 @@ EOF
 ```bash
 INPUTS_DIR=/tmp/delegate-inputs
 mkdir -p "$INPUTS_DIR"
-bash {BASE_DIR}/scripts/sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR"
 
 # 追加資料を選定した場合
-bash {BASE_DIR}/scripts/sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
+bash {BASE_DIR}/scripts/claude-sub-exec.sh <work_dir_path> <task>.md "$INPUTS_DIR" "$INPUTS_DIR/<task>-context.txt"
 ```
 
 Bash 呼び出しは常に `run_in_background: true` を指定する。

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: sub-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
+# Usage: claude-sub-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
 # 調査/現状把握/設計/トレードオフ比較の委譲用（sub エージェント、書き込み禁止・claude のみ）。
 set -euo pipefail
 
@@ -12,7 +12,7 @@ INPUTS_DIR="${3:-}"
 SELECTED_CONTEXT_FILE="${4:-}"
 
 if [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
-  echo "Usage: sub-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]"
+  echo "Usage: claude-sub-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]"
   exit 1
 fi
 

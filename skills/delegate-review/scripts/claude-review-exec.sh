@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] [--inputs-dir <dir>]
+# Usage: claude-review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] [--inputs-dir <dir>]
 # ゴールアライメントレビュー委譲用の薄いラッパ（diff 範囲指定）。
 set -euo pipefail
 
@@ -9,7 +9,7 @@ WORKTREE="${1:-}"
 INPUTS_DIR="/tmp/delegate-inputs"
 
 if [ -z "$WORKTREE" ]; then
-  echo "Usage: review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] [--inputs-dir <dir>]"
+  echo "Usage: claude-review-exec.sh <worktree> <goal1> <diff1> [<goal2> <diff2> ...] [--inputs-dir <dir>]"
   exit 1
 fi
 
@@ -72,4 +72,4 @@ cat >> "$TASK_FILE" <<'EOF'
 差分を解釈するために必要ならファイル全文を読んで構いませんが、差分に含まれない既存コードへの指摘はしないでください。
 EOF
 
-exec bash "$SCRIPT_DIR/review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
+exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
