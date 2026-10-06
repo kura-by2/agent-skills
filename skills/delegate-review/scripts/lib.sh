@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # delegate-impl / delegate-sub / delegate-review 各スキルに同梱する実行基盤。
-# 各スキルは完全に独立しており、このファイルは他スキルを参照せず自スキル配下だけで完結する。
+# Jev の choice 判定だけはリポジトリ直下の scripts/jev-choice.sh を共有する。
+# それ以外は各スキル配下だけで完結する。
 #
 # 役割:
 #   - エージェント別フォールバック fallback/<agent>.tsv（backend<TAB>model）の生成
@@ -12,12 +13,12 @@
 # を読むだけで、不在なら fail-closed（委譲しない）。
 # 接続先は api.typesafe.ai に固定する。鍵の値と指示ファイル本文はログ・出力に書かない。
 
-DELEGATE_JEV_URL="https://api.typesafe.ai/v1/systemone"      # 固定（上書き不可）
-DELEGATE_JEV_MODEL="jev-latest"
-DELEGATE_JEV_TIMEOUT="${DELEGATE_JEV_TIMEOUT:-3}"
 DELEGATE_JEV_CONFIDENCE_MIN="0.6"
 DELEGATE_SUMMARY_MODEL="${DELEGATE_SUMMARY_MODEL:-haiku}"
 DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレース用）
+
+# Jev choice 判定の共通スクリプト。スキルが symlink 経由で呼ばれても実体から解決する。
+DELEGATE_JEV_CHOICE_SCRIPT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/jev-choice.sh"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -62,8 +63,8 @@ delegate_summary_ok() {
   return 0
 }
 
-# model-tiers から指定 backend 群の model->summary を JSON object にする（Jev の criteria）。
-delegate_criteria_json() {
+# model-tiers から指定 backend 群の model->summary を "名前<TAB>説明" の行にする（Jev の criteria）。
+delegate_criteria_tsv() {
   local tiers_file="$1"; shift
   local filter
   filter="$(printf '%s|' "$@")"
@@ -74,47 +75,25 @@ delegate_criteria_json() {
       for (i = 1; i <= n; i++) if ($1 == a[i] && a[i] != "") ok = 1
       if (ok) print $2 "\t" $3
     }
-  ' "$tiers_file" | jq -R -s '
-    split("\n") | map(select(length > 0) | split("\t")) | map({(.[0]): (.[1] // "")}) | add // {}
-  '
+  ' "$tiers_file"
 }
 
-# summary を state に、criteria を候補にして Jev の choice に問い合わせる。
-# 標準出力に "choice<TAB>confidence"。鍵なし・criteria 空・HTTP 失敗・タイムアウト・解釈失敗は非0。
+# summary を state に、criteria（"名前<TAB>説明" の行）を候補にして共通スクリプトに問い合わせる。
+# 標準出力に "choice<TAB>confidence"。失敗時は理由を DELEGATE_JEV_LAST_ERROR に入れて非0。
 delegate_jev_choice() {
-  local summary="$1" criteria_json="$2" instructions="$3"
-  local key body resp rc out
+  local summary="$1" criteria="$2" instructions="$3"
+  local out err err_file
   DELEGATE_JEV_LAST_ERROR=""
-  key="${JEV_API_KEY:-}"
-  if [ -z "$key" ]; then DELEGATE_JEV_LAST_ERROR="no_key"; return 1; fi
-  if [ -z "$criteria_json" ] || [ "$criteria_json" = "{}" ]; then
-    DELEGATE_JEV_LAST_ERROR="none"; return 1
+  err_file="$(mktemp)" || { DELEGATE_JEV_LAST_ERROR="http_error"; return 1; }
+  if out="$(printf '%s' "$criteria" | "$DELEGATE_JEV_CHOICE_SCRIPT" "$summary" "$instructions" 2>"$err_file")"; then
+    rm -f "$err_file"
+    printf '%s\n' "$out"
+    return 0
   fi
-  if ! body="$(jq -n --arg state "$summary" --arg model "$DELEGATE_JEV_MODEL" \
-    --arg instr "$instructions" --argjson criteria "$criteria_json" '
-    {
-      state: $state,
-      model: $model,
-      questions: { route: { type: "choice", instructions: $instr, criteria: $criteria } }
-    }')"; then
-    DELEGATE_JEV_LAST_ERROR="http_error"; return 1
-  fi
-  resp="$(curl -fsS --max-time "$DELEGATE_JEV_TIMEOUT" \
-    -H "Authorization: Bearer $key" -H 'Content-Type: application/json' \
-    -X POST "$DELEGATE_JEV_URL" -d "$body" 2>/dev/null)"
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    if [ "$rc" -eq 28 ]; then DELEGATE_JEV_LAST_ERROR="timeout"; else DELEGATE_JEV_LAST_ERROR="http_error"; fi
-    return 1
-  fi
-  if ! out="$(printf '%s' "$resp" | jq -e -r '
-    .answers.route
-    | select(.choice != null and (.confidence | type) == "number")
-    | "\(.choice)\t\(.confidence)"
-  ' 2>/dev/null)"; then
-    DELEGATE_JEV_LAST_ERROR="http_error"; return 1
-  fi
-  printf '%s\n' "$out"
+  err="$(cat "$err_file")"
+  rm -f "$err_file"
+  DELEGATE_JEV_LAST_ERROR="${err:-http_error}"
+  return 1
 }
 
 delegate_confidence_ok() {
@@ -139,8 +118,8 @@ delegate_rebuild_fallback() {
   local tmp backend criteria out choice conf wrote=0
   tmp="$(mktemp)"
   for backend in "${backends[@]}"; do
-    criteria="$(delegate_criteria_json "$tiers_file" "$backend")" || criteria=""
-    if [ -z "$criteria" ] || [ "$criteria" = "{}" ]; then
+    criteria="$(delegate_criteria_tsv "$tiers_file" "$backend")" || criteria=""
+    if [ -z "$criteria" ]; then
       printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
       continue
     fi
@@ -244,8 +223,8 @@ delegate_resolve_model() {
   elif ! summary="$(delegate_summarize_task "$task_path")"; then
     reason="summary_failed"
   else
-    criteria="$(delegate_criteria_json "$tiers_file" "${backends[@]}")" || criteria="{}"
-    if [ -z "$criteria" ] || [ "$criteria" = "{}" ]; then
+    criteria="$(delegate_criteria_tsv "$tiers_file" "${backends[@]}")" || criteria=""
+    if [ -z "$criteria" ]; then
       reason="none"
     elif ! out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。")"; then
       reason="${DELEGATE_JEV_LAST_ERROR:-http_error}"
