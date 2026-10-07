@@ -13,7 +13,6 @@
 # を読むだけで、不在なら fail-closed（委譲しない）。
 # 接続先は api.typesafe.ai に固定する。鍵の値と指示ファイル本文はログ・出力に書かない。
 
-DELEGATE_JEV_CONFIDENCE_MIN="0.6"
 DELEGATE_SUMMARY_MODEL="${DELEGATE_SUMMARY_MODEL:-haiku}"
 DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレース用）
 
@@ -70,12 +69,14 @@ delegate_criteria_tsv() {
 
 # summary を state に、criteria（"名前<TAB>説明" の行）を候補にして共通スクリプトに問い合わせる。
 # 標準出力に "choice<TAB>confidence"。失敗時は理由を DELEGATE_JEV_LAST_ERROR に入れて非0。
+# 第4引数に最低確信度を渡すと、その未満は low_confidence として失敗扱いになる（省略時は閾値判定なし）。
 delegate_jev_choice() {
-  local summary="$1" criteria="$2" instructions="$3"
-  local out err err_file
+  local summary="$1" criteria="$2" instructions="$3" min_confidence="${4:-}"
+  local out err err_file opts=()
   DELEGATE_JEV_LAST_ERROR=""
+  [ -n "$min_confidence" ] && opts=(--min-confidence "$min_confidence")
   err_file="$(mktemp)" || { DELEGATE_JEV_LAST_ERROR="http_error"; return 1; }
-  if out="$(printf '%s' "$criteria" | "$DELEGATE_JEV_CHOICE_SCRIPT" "$summary" "$instructions" 2>"$err_file")"; then
+  if out="$(printf '%s' "$criteria" | "$DELEGATE_JEV_CHOICE_SCRIPT" "${opts[@]}" "$summary" "$instructions" 2>"$err_file")"; then
     rm -f "$err_file"
     printf '%s\n' "$out"
     return 0
@@ -84,12 +85,6 @@ delegate_jev_choice() {
   rm -f "$err_file"
   DELEGATE_JEV_LAST_ERROR="${err:-http_error}"
   return 1
-}
-
-delegate_confidence_ok() {
-  local conf="$1"
-  [ -n "$conf" ] || return 1
-  awk -v c="$conf" -v m="$DELEGATE_JEV_CONFIDENCE_MIN" 'BEGIN { exit !((c + 0) >= (m + 0)) }'
 }
 
 delegate_backend_from_model() {
@@ -216,13 +211,11 @@ delegate_resolve_model() {
     criteria="$(delegate_criteria_tsv "$tiers_file" "${backends[@]}")" || criteria=""
     if [ -z "$criteria" ]; then
       reason="none"
-    elif ! out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。")"; then
+    elif ! out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。" 0.6)"; then
       reason="${DELEGATE_JEV_LAST_ERROR:-http_error}"
     else
       IFS=$'\t' read -r choice conf <<< "$out"
-      if ! delegate_confidence_ok "$conf"; then
-        reason="low_confidence"
-      elif ! backend="$(delegate_backend_from_model "$choice")"; then
+      if ! backend="$(delegate_backend_from_model "$choice")"; then
         reason="http_error"
       else
         printf 'delegate %s: model=%s source=jev confidence=%s\n' "$agent" "$choice" "$conf" >&2
