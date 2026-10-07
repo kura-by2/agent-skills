@@ -16,6 +16,7 @@
 
 DELEGATE_FALLBACK_MAX_AGE_SECONDS=86400 # フォールバックの鮮度（1日）
 DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレース用）
+DELEGATE_JEV_LAST_OUTPUT="" # 直近の Jev 判定の出力 "choice<TAB>confidence"
 
 # このファイル（lib.sh）の実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
 # フォールバックは、このスキルしか読まないので、ここ（自スキル配下・git 追跡外）に置く。
@@ -82,17 +83,19 @@ delegate_criteria_tsv() {
 }
 
 # summary を state に、criteria（"名前<TAB>説明" の行）を候補にして共通スクリプトに問い合わせる。
-# 標準出力に "choice<TAB>confidence"。失敗時は理由を DELEGATE_JEV_LAST_ERROR に入れて非0。
+# 判定結果 "choice<TAB>confidence" を DELEGATE_JEV_LAST_OUTPUT に、失敗理由を DELEGATE_JEV_LAST_ERROR に入れる。
+# コマンド置換で呼ぶと失敗理由がサブシェルに閉じ込められるため、この関数は直接呼び出し、結果は両グローバルから読む。
 # 第4引数に最低確信度を渡すと、その未満は low_confidence として失敗扱いになる（省略時は閾値判定なし）。
 delegate_jev_choice() {
   local summary="$1" criteria="$2" instructions="$3" min_confidence="${4:-}"
   local out err err_file opts=()
   DELEGATE_JEV_LAST_ERROR=""
+  DELEGATE_JEV_LAST_OUTPUT=""
   [ -n "$min_confidence" ] && opts=(--min-confidence "$min_confidence")
   err_file="$(mktemp)" || { DELEGATE_JEV_LAST_ERROR="http_error"; return 1; }
   if out="$(printf '%s' "$criteria" | "$DELEGATE_JEV_CHOICE_SCRIPT" "${opts[@]}" "$summary" "$instructions" 2>"$err_file")"; then
     rm -f "$err_file"
-    printf '%s\n' "$out"
+    DELEGATE_JEV_LAST_OUTPUT="$out"
     return 0
   fi
   err="$(cat "$err_file")"
@@ -122,13 +125,13 @@ delegate_rebuild_fallback() {
       printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
       continue
     fi
-    if ! out="$(delegate_jev_choice "作業全般に標準的に使うモデルを1つ選ぶ。" "$criteria" \
-      "この backend の既定として最も適したモデルを選ぶ。")"; then
+    if ! delegate_jev_choice "作業全般に標準的に使うモデルを1つ選ぶ。" "$criteria" \
+      "この backend の既定として最も適したモデルを選ぶ。"; then
       printf 'delegate %s fallback-gen: backend=%s source=none reason=%s\n' \
         "$agent" "$backend" "${DELEGATE_JEV_LAST_ERROR:-none}" >&2
       continue
     fi
-    IFS=$'\t' read -r choice conf <<< "$out"
+    IFS=$'\t' read -r choice conf <<< "$DELEGATE_JEV_LAST_OUTPUT"
     if [ -z "$choice" ]; then
       printf 'delegate %s fallback-gen: backend=%s source=none reason=http_error\n' "$agent" "$backend" >&2
       continue
@@ -229,10 +232,10 @@ delegate_resolve_model() {
     criteria="$(delegate_criteria_tsv "$tiers_file" "${backends[@]}")" || criteria=""
     if [ -z "$criteria" ]; then
       reason="none"
-    elif ! out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。" 0.5)"; then
+    elif ! delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。" 0.5; then
       reason="${DELEGATE_JEV_LAST_ERROR:-http_error}"
     else
-      IFS=$'\t' read -r choice conf <<< "$out"
+      IFS=$'\t' read -r choice conf <<< "$DELEGATE_JEV_LAST_OUTPUT"
       if ! backend="$(delegate_backend_from_model "$choice")"; then
         reason="http_error"
       else
