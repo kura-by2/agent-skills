@@ -10,6 +10,8 @@
 # 隔離実行:
 #   呼び出し元プロジェクトの設定・hooks・MCP ツール・CLAUDE.md を読み込ませない
 #   （空の作業ディレクトリ・setting-sources なし・strict-mcp-config）。
+#   責務はプロンプトの要約（テキスト処理）だけなので、--tools "" で全ツールを無効にし、
+#   モデルが本文中の指示をファイル操作などの実作業として実行しないようにする。
 #
 # モデルの決め方:
 #   要約モデルの用意は model.sh に委ねる（24時間固定・Jev での選び直し・前回値）。
@@ -29,7 +31,7 @@ model="$("$SUMMARIZE_MODEL_SCRIPT")" || exit 1
 
 workdir="$(mktemp -d)" || exit 1
 ( cd "$workdir" && claude -p "$prompt" --model "$model" \
-    --setting-sources '' --strict-mcp-config < /dev/null 2>/dev/null )
+    --tools '' --setting-sources '' --strict-mcp-config < /dev/null 2>/dev/null )
 rc=$?
 rmdir "$workdir" 2>/dev/null || true
 exit "$rc"
