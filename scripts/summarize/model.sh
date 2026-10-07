@@ -27,7 +27,7 @@ SUMMARIZE_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMARIZE_MODEL_FILE="$SUMMARIZE_DIR/model.txt"
 # 共通スクリプト同士の呼び出し。要約モデルの候補元（llm-models）と Jev 判定。
 SUMMARIZE_LLM_MODELS_SCRIPT="$SUMMARIZE_DIR/../llm-models/script.sh"
-SUMMARIZE_LLM_MODELS_FILE="$SUMMARIZE_DIR/../llm-models/llm-models.tsv"
+SUMMARIZE_LLM_MODELS_FILE="$SUMMARIZE_DIR/../llm-models/llm-models.json"
 SUMMARIZE_JEV_CHOICE_SCRIPT="$SUMMARIZE_DIR/../jev-choice.sh"
 
 summarize_is_fresh() {
@@ -48,10 +48,17 @@ summarize_read_model() {
 }
 
 # 要約モデルの選択肢（claude backend）を "model<TAB>説明" で出す。
-# summarize は claude で動くので候補は llm-models.tsv の claude 行に限る。
+# summarize は claude で動くので候補は llm-models.json の claude エントリに限る。
+# 説明は公式の1行説明に比較表の「列名: 値」を列順に "; " で連ねた従来と同等の文字列にする。
 summarize_candidates() {
   [ -f "$SUMMARIZE_LLM_MODELS_FILE" ] || return 1
-  awk -F '\t' '$0 !~ /^#/ && NF >= 3 && $1 == "claude" { print $2 "\t" $3 }' "$SUMMARIZE_LLM_MODELS_FILE"
+  jq -r '
+    .[]
+    | select(.backend == "claude")
+    | .model + "\t"
+      + ( ( [ .description ] + ( (.comparison // {}) | to_entries | map("\(.key): \(.value)") ) )
+          | map(select(. != null and . != "")) | join("; ") )
+  ' "$SUMMARIZE_LLM_MODELS_FILE"
 }
 
 # 固定の問いで Jev に要約モデルを1つ選ばせる。標準出力にモデル名。失敗・低確信度は非0。

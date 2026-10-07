@@ -9,7 +9,8 @@
 #   - 委譲ごとの Jev によるモデル判定（本文は送らず要約のみ）
 #   - codex / claude（agent 指定）での委譲実行
 #
-# モデルの候補元は scripts/llm-models/llm-models.tsv（backend<TAB>model<TAB>description）。委譲の前に
+# モデルの候補元は scripts/llm-models/llm-models.json（backend・model・description を持つオブジェクトの
+# 配列。claude は比較表の値を comparison オブジェクトでも持つ）。委譲の前に
 # scripts/llm-models/script.sh を呼んで最新化する（失敗しても続行し、既存の一覧を使う）。一覧が
 # 不在なら Jev の候補が空になり、フォールバックへ倒れる。
 # 接続先は api.typesafe.ai に固定する。鍵の値と指示ファイル本文はログ・出力に書かない。
@@ -27,7 +28,7 @@ DELEGATE_SCRIPTS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/
 DELEGATE_JEV_CHOICE_SCRIPT="$DELEGATE_SCRIPTS_DIR/jev-choice.sh"
 DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize/script.sh"
 DELEGATE_LLM_MODELS_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/script.sh"
-DELEGATE_LLM_MODELS_FILE="$DELEGATE_SCRIPTS_DIR/llm-models/llm-models.tsv"
+DELEGATE_LLM_MODELS_FILE="$DELEGATE_SCRIPTS_DIR/llm-models/llm-models.json"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -67,19 +68,18 @@ delegate_summary_ok() {
   return 0
 }
 
-# llm-models から指定 backend 群の model->description を "名前<TAB>説明" の行にする（Jev の criteria）。
+# llm-models（JSON）から指定 backend 群の model->description を "名前<TAB>説明" の行にする（Jev の criteria）。
+# 説明は公式の1行説明に、claude の comparison（比較表の値）を「列名: 値」として列順に "; " で連ねた
+# 従来と同等の文字列にする。codex は comparison を持たないので1行説明だけになる。
 delegate_criteria_tsv() {
   local tiers_file="$1"; shift
-  local filter
-  filter="$(printf '%s|' "$@")"
-  awk -F '\t' -v f="$filter" '
-    BEGIN { n = split(f, a, "|") }
-    $0 !~ /^#/ && NF >= 3 {
-      ok = 0
-      for (i = 1; i <= n; i++) if ($1 == a[i] && a[i] != "") ok = 1
-      if (ok) print $2 "\t" $3
-    }
-  ' "$tiers_file"
+  jq -r '
+    .[]
+    | select(.backend as $b | $ARGS.positional | index($b))
+    | .model + "\t"
+      + ( ( [ .description ] + ( (.comparison // {}) | to_entries | map("\(.key): \(.value)") ) )
+          | map(select(. != null and . != "")) | join("; ") )
+  ' "$tiers_file" --args "$@"
 }
 
 # summary を state に、criteria（"名前<TAB>説明" の行）を候補にして共通スクリプトに問い合わせる。

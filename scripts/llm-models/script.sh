@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # LLM モデル一覧の共通スクリプト。
-# backend 別の利用可能モデル一覧 llm-models.tsv（backend<TAB>model<TAB>description）を作る。
-# このスクリプト自身の場所にある llm-models.tsv とモデルキャッシュだけを管理し、LLM は一切使わない。
+# backend 別の利用可能モデル一覧 llm-models.json（モデルごとのオブジェクトの配列）を作る。
+# 各要素は backend・model・description（公式の1行説明）を持つ。claude は加えて、個別ページ
+# 「How it compares」表の自モデル行の各値を、列名をキーにした comparison オブジェクトとして持つ。
+# このスクリプト自身の場所にある llm-models.json とモデルキャッシュだけを管理し、LLM は一切使わない。
 #
 # 役割:
-#   - llm-models.tsv の日次再生成（1日以上前/不在のときだけ作り直す。新しければ何もしない）
+#   - llm-models.json の日次再生成（1日以上前/不在のときだけ作り直す。新しければ何もしない）
 #   - モデルキャッシュ（codex: codex debug models / claude: 公式 docs Markdown）の取得
 #     claude は overview に加え、overview の「Model page」行が指す各モデルの個別ページも取得する
 #   - 退役済みモデルの除外
@@ -23,7 +25,7 @@ LLM_MODELS_CLAUDE_MODELS_TIMEOUT=20 # claude モデルキャッシュ取得の�
 
 # このスクリプトの実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
 LLM_MODELS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LLM_MODELS_FILE="$LLM_MODELS_DIR/llm-models.tsv"
+LLM_MODELS_FILE="$LLM_MODELS_DIR/llm-models.json"
 
 # backend 別のモデルキャッシュは script.sh と同じディレクトリ直下に置く。
 # claude は公式 docs Markdown、codex は JSON なので拡張子を分ける。
@@ -125,9 +127,12 @@ llm_models_claude_model_page_urls() {
   ' "$1"
 }
 
-# claude 個別ページ1枚から "model_id<TAB>description" を1行抽出する。
+# claude 個別ページ1枚から "model_id<TAB>description<TAB>label<TAB>value<TAB>..." を1行抽出する。
 # model: `Model ID: `...`` の値。
-# description: 冒頭の1行説明 ＋ 「How it compares」表の「(this model)」行の各値（列名付き）を連結。
+# description: 冒頭の1行説明（公式の1行説明。比較表の値は含めない）。
+# 以降は「How it compares」表の「(this model)」行の各値を label<TAB>value のペアで並べる
+# （Model 名の列は除く）。列名は比較表のヘッダ行から取る。
+# 値・説明・列名に含まれるタブは空白に潰し、タブ区切りが崩れないようにする。
 # 構造が想定と違い Model ID が取れない場合は非0（fail-closed）。
 llm_models_claude_extract_row() {
   awk '
@@ -140,7 +145,7 @@ llm_models_claude_extract_row() {
       }
       return out
     }
-    BEGIN { id = ""; got = 0; desc = ""; inc = 0; haveheader = 0 }
+    BEGIN { id = ""; got = 0; desc = ""; inc = 0; haveheader = 0; pairs = "" }
     # Model ID 行。ここまでに拾った最後の素の行を1行説明とする。
     got == 0 && /^Model ID:/ {
       s = $0; sub(/^Model ID:[ \t]*/, "", s); gsub(/`/, "", s); id = trim(s); got = 1; next
@@ -156,15 +161,16 @@ llm_models_claude_extract_row() {
       if ($0 ~ /^[ \t]*\|[ :|-]+$/) next
       nf = split($0, a, "|")   # a[1] と a[nf] は先頭/末尾 | の外側で空。セルは a[2..nf-1]。
       if (haveheader == 0) {
-        for (i = 2; i < nf; i++) label[i] = strip_links(trim(a[i]))
+        for (i = 2; i < nf; i++) { label[i] = strip_links(trim(a[i])); gsub(/\t/, " ", label[i]) }
         haveheader = 1
         next
       }
       if ($0 ~ /\(this model\)/) {
-        for (i = 3; i < nf; i++) {   # i=2 は Model 名の列なので説明に含めない
+        for (i = 3; i < nf; i++) {   # i=2 は Model 名の列なので比較値に含めない
           v = strip_links(trim(a[i]))
           if (v == "") continue
-          desc = desc (desc == "" ? "" : "; ") label[i] ": " v
+          gsub(/\t/, " ", v)
+          pairs = pairs "\t" label[i] "\t" v
         }
       }
       next
@@ -172,7 +178,7 @@ llm_models_claude_extract_row() {
     END {
       if (id == "") exit 1
       gsub(/\t/, " ", desc)
-      print id "\t" desc
+      print id "\t" desc pairs
     }
   ' "$1"
 }
@@ -217,8 +223,10 @@ llm_models_ensure_cache() {
   esac
 }
 
-# キャッシュから退役していない利用可能モデルを "model<TAB>description" で列挙する。
-# description は公式説明文（codex は description / claude は個別ページの説明＋比較値）をそのまま使う。
+# キャッシュから退役していない利用可能モデルを backend ごとのオブジェクト（1行1 JSON）で列挙する。
+# 各オブジェクトは backend・model・description を持つ。description は公式の1行説明をそのまま使う
+# （codex は description、claude は個別ページ冒頭の1行説明）。claude は加えて比較表の自モデル行の
+# 各値を列名キーの comparison オブジェクトとして持つ。
 # claude は個別ページの取得・抽出に失敗したら非0（fail-closed）。
 llm_models_catalog_rows() {
   local backend="$1" cache_file
@@ -226,20 +234,20 @@ llm_models_catalog_rows() {
   [ -f "$cache_file" ] || return 1
   case "$backend" in
     codex)
-      jq -r '
+      jq -c '
         .models[]
         | select(
             type == "string"
             or (.upgrade.retirement_at == null)
             or (((.upgrade.retirement_at | fromdateiso8601?) // 0) > now)
           )
-        | if type == "string" then "\(.)\t"
-          else "\(.slug)\t\((.description // "") | gsub("[\t\n]"; " "))" end
+        | if type == "string" then { backend: "codex", model: ., description: "" }
+          else { backend: "codex", model: .slug, description: ((.description // "") | gsub("[\t\n]"; " ")) } end
       ' "$cache_file"
       ;;
     claude)
       # overview の「Model page」行 → 各個別ページ .md の2段で組み立てる。
-      local urls url slug page_cache
+      local urls url slug page_cache row
       urls="$(llm_models_claude_model_page_urls "$cache_file")" || return 1
       if [ -z "$urls" ]; then
         printf 'error: no model page links found in claude overview cache: %s\n' "$cache_file" >&2
@@ -253,24 +261,31 @@ llm_models_catalog_rows() {
           printf 'error: claude per-model page cache is missing: %s\n' "$page_cache" >&2
           return 1
         fi
-        if ! llm_models_claude_extract_row "$page_cache"; then
+        if ! row="$(llm_models_claude_extract_row "$page_cache")"; then
           printf 'error: failed to extract model row from claude per-model page: %s\n' "$page_cache" >&2
           return 1
         fi
+        # "model<TAB>description<TAB>label<TAB>value<TAB>..." を JSON オブジェクト1件にする。
+        # 3列目以降の label/value ペアを列名順のまま comparison オブジェクトにまとめる。
+        printf '%s\n' "$row" | jq -R -c '
+          split("\t")
+          | { backend: "claude", model: .[0], description: .[1] }
+          + { comparison: ( .[2:] as $p
+              | reduce range(0; ($p | length); 2) as $i ({}; . + { ($p[$i]): $p[$i + 1] }) ) }
+        '
       done <<< "$urls"
       ;;
     *) printf 'error: unknown backend: %s\n' "$backend" >&2; return 1 ;;
   esac
 }
 
-# llm-models.tsv を再生成する。backend ごとにキャッシュを確保し、退役していないモデルを列挙する。
+# llm-models.json を再生成する。backend ごとにキャッシュを確保し、退役していないモデルを列挙する。
 # いずれかの backend でキャッシュ確保か列挙に失敗したら既存を保持したまま非0（fail-closed）。
-# 一覧は tmp に組み立て、全 backend 成功時だけ本体へ差し替える。
+# 列挙結果（1行1 JSON オブジェクト）を tmp に集め、全 backend 成功時だけ配列にして本体へ差し替える。
 llm_models_rebuild() {
   local backends=("$@")
-  local tmp backend model desc rows any=0
+  local tmp tmp_json backend rows any=0
   tmp="$(mktemp)"
-  printf '# backend\tmodel\tdescription\n' > "$tmp"
   for backend in "${backends[@]}"; do
     if ! llm_models_ensure_cache "$backend"; then
       rm -f "$tmp"
@@ -281,18 +296,25 @@ llm_models_rebuild() {
       rm -f "$tmp"
       return 1
     fi
-    while IFS=$'\t' read -r model desc; do
-      [ -n "$model" ] || continue
-      printf '%s\t%s\t%s\n' "$backend" "$model" "$desc" >> "$tmp"
+    if [ -n "$rows" ]; then
+      printf '%s\n' "$rows" >> "$tmp"
       any=1
-    done <<< "$rows"
+    fi
   done
   if [ "$any" -eq 0 ]; then
     rm -f "$tmp"
     printf 'error: cannot build llm-models because no models were enumerated from any backend\n' >&2
     return 1
   fi
-  mv "$tmp" "$LLM_MODELS_FILE"
+  # 1行1オブジェクトの NDJSON を配列にまとめる。失敗したら本体に触れず非0。
+  tmp_json="$tmp.json"
+  if ! jq -s '.' "$tmp" > "$tmp_json"; then
+    rm -f "$tmp" "$tmp_json"
+    printf 'error: failed to assemble llm-models json array\n' >&2
+    return 1
+  fi
+  rm -f "$tmp"
+  mv "$tmp_json" "$LLM_MODELS_FILE"
 }
 
 # 起動時処理: 一覧が1日以上前（または不在）なら両 backend で再生成する。新しければ何もしない。
