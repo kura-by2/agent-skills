@@ -33,25 +33,37 @@ instructions="${2:-}"
 choices_file="${3:-}"
 
 # --- デバッグ用: Jev の応答を記録する（本体の判定・出力・終了コードには影響しない） ---
-# 要約モデルの選び直しが low_confidence で失敗する原因を追うための一時的な仕掛け。
-# 呼び出し元が stderr を捨てても見られるよう、/tmp のファイルに 1 呼び出し 1 行の JSON で追記する。
-# 鍵（JEV_API_KEY）と state（要約文）は記録しない。
-DEBUG_LOG="/tmp/jev-choice-debug.log"
+# どういった文章に対してどのモデルをどの確信度で選んだかを後で分析するための仕掛け。
+# 呼び出し元が stderr を捨てても見られるよう、プロジェクトルート直下の log/ に
+# 1 呼び出し 1 行の JSON で追記する。
+# 鍵（JEV_API_KEY）は記録しない。state（委譲指示をマスキング済みの要約文）は記録する。
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+project_root="$("$script_dir/project-root.sh" 2>/dev/null || true)"
+# プロジェクトルートが解決できなければログを書かずに本体は続行する。
+if [ -n "$project_root" ]; then
+  DEBUG_LOG="$project_root/log/jev-choice.jsonl"
+else
+  DEBUG_LOG=""
+fi
 dbg_names="[]"      # 候補の名前一覧（説明文は含めない）
 dbg_route="null"    # HTTP 応答の .answers.route 全体
 dbg_resp_head="null" # JSON 解釈不能・HTTP 失敗時に残す応答本文の先頭
 
 debug_log() {
   # デバッグ用: 判定結果を 1 行追記する。記録の失敗で本体を止めないよう握りつぶす。
+  # 出力先が未解決（プロジェクトルート不明）のときは何もしない。
+  [ -n "$DEBUG_LOG" ] || return 0
+  mkdir -p "$(dirname "$DEBUG_LOG")" 2>/dev/null || return 0
   jq -n -c \
     --arg time "$(date -Is 2>/dev/null)" \
+    --arg state "$summary" \
     --arg instructions "$instructions" \
     --argjson choices "$dbg_names" \
     --argjson route "$dbg_route" \
     --arg min_confidence "$min_confidence" \
     --arg decision "$1" \
     --argjson response_head "$dbg_resp_head" \
-    '{time: $time, instructions: $instructions, choices: $choices,
+    '{time: $time, state: $state, instructions: $instructions, choices: $choices,
       route: $route, min_confidence: $min_confidence,
       decision: $decision, response_head: $response_head}' \
     >> "$DEBUG_LOG" 2>/dev/null || true
