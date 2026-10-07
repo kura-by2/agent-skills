@@ -25,17 +25,14 @@ SUMMARIZE_JEV_INSTRUCTIONS='コストが低く、適切に要約できるモデ�
 # このスクリプトの実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
 SUMMARIZE_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMARIZE_MODEL_FILE="$SUMMARIZE_DIR/model.txt"
-# 共通スクリプト同士の呼び出し。要約モデルの候補元（llm-models）と Jev 判定。
+# 共通スクリプト同士の呼び出し。要約モデルの候補元（llm-models）・Jev 判定・鮮度判定。
 SUMMARIZE_LLM_MODELS_SCRIPT="$SUMMARIZE_DIR/../llm-models/script.sh"
-SUMMARIZE_LLM_MODELS_FILE="$SUMMARIZE_DIR/../llm-models/llm-models.json"
+SUMMARIZE_CRITERIA_SCRIPT="$SUMMARIZE_DIR/../llm-models/criteria.sh"
 SUMMARIZE_JEV_CHOICE_SCRIPT="$SUMMARIZE_DIR/../jev-choice.sh"
+SUMMARIZE_FILE_FRESH_SCRIPT="$SUMMARIZE_DIR/../file-fresh.sh"
 
 summarize_is_fresh() {
-  local f="$1" now mtime
-  [ -f "$f" ] || return 1
-  now="$(date +%s)"
-  mtime="$(date -r "$f" +%s 2>/dev/null)" || return 1
-  [ "$((now - mtime))" -lt "$SUMMARIZE_MODEL_MAX_AGE_SECONDS" ]
+  "$SUMMARIZE_FILE_FRESH_SCRIPT" "$1" "$SUMMARIZE_MODEL_MAX_AGE_SECONDS"
 }
 
 # 保存済みの要約モデル名を1行で返す。ファイル不在・空なら非0。
@@ -49,16 +46,8 @@ summarize_read_model() {
 
 # 要約モデルの選択肢（claude backend）を "model<TAB>説明" で出す。
 # summarize は claude で動くので候補は llm-models.json の claude エントリに限る。
-# 説明は公式の1行説明に比較表の「列名: 値」を列順に "; " で連ねた従来と同等の文字列にする。
 summarize_candidates() {
-  [ -f "$SUMMARIZE_LLM_MODELS_FILE" ] || return 1
-  jq -r '
-    .[]
-    | select(.backend == "claude")
-    | .model + "\t"
-      + ( ( [ .description ] + ( (.comparison // {}) | to_entries | map("\(.key): \(.value)") ) )
-          | map(select(. != null and . != "")) | join("; ") )
-  ' "$SUMMARIZE_LLM_MODELS_FILE"
+  "$SUMMARIZE_CRITERIA_SCRIPT" claude
 }
 
 # 固定の問いで Jev に要約モデルを1つ選ばせる。標準出力にモデル名。失敗・低確信度は非0。

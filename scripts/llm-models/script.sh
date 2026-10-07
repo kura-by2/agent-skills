@@ -26,6 +26,8 @@ LLM_MODELS_CLAUDE_MODELS_TIMEOUT=20 # claude モデルキャッシュ取得の�
 # このスクリプトの実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
 LLM_MODELS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLM_MODELS_FILE="$LLM_MODELS_DIR/llm-models.json"
+# 鮮度判定は共通スクリプトに委ねる。
+LLM_MODELS_FILE_FRESH_SCRIPT="$LLM_MODELS_DIR/../file-fresh.sh"
 
 # backend 別のモデルキャッシュは script.sh と同じディレクトリ直下に置く。
 # claude は公式 docs Markdown、codex は JSON なので拡張子を分ける。
@@ -50,11 +52,7 @@ llm_models_claude_page_cache_file() {
 }
 
 llm_models_is_fresh() {
-  local f="$1" now mtime
-  [ -f "$f" ] || return 1
-  now="$(date +%s)"
-  mtime="$(date -r "$f" +%s 2>/dev/null)" || return 1
-  [ "$((now - mtime))" -lt "$LLM_MODELS_MAX_AGE_SECONDS" ]
+  "$LLM_MODELS_FILE_FRESH_SCRIPT" "$1" "$LLM_MODELS_MAX_AGE_SECONDS"
 }
 
 # codex のモデルキャッシュを取得する。取得できたときだけ tmp を本体に差し替える。
