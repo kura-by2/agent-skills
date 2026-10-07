@@ -4,7 +4,7 @@
 # 使い方:
 #   jev-choice.sh [--min-confidence N] <state(要約文)> <instructions> [choices_file]
 #   選択肢は "名前<TAB>説明" の行で、choices_file またはファイル省略時は stdin から渡す。
-#   --min-confidence N: Jev の confidence が N 未満なら低確信度として失敗扱いにする。
+#   --min-confidence N: Jev の confidence が N より大きいときだけ成功扱いにし、N 以下なら低確信度として失敗扱いにする。
 #                       省略時は閾値判定をしない。
 #
 # 出力・終了コード:
@@ -108,10 +108,10 @@ if ! out="$(printf '%s' "$resp" | jq -e -r '
   fail http_error
 fi
 
-# 閾値指定時は confidence（out の2列目）を数値として比較し、N 未満なら低確信度で失敗。
+# 閾値指定時は confidence（out の2列目）を数値として比較し、N より大きいときだけ成功、N 以下なら低確信度で失敗。
 if [ -n "$min_confidence" ]; then
   conf="${out#*$'\t'}"
-  awk -v c="$conf" -v m="$min_confidence" 'BEGIN { exit !((c + 0) >= (m + 0)) }' || fail low_confidence
+  awk -v c="$conf" -v m="$min_confidence" 'BEGIN { exit !((c + 0) > (m + 0)) }' || fail low_confidence
 fi
 
 debug_log ok

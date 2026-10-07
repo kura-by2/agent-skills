@@ -212,7 +212,7 @@ delegate_fallback_model() {
 }
 
 # agent 用に使用モデルを決める。標準出力 "backend<TAB>model"。
-# 委譲ごとに Jev（要約→choice、閾値 0.6）で選び、鍵なし・失敗・低確信度・要約失敗は fallback へ倒す。
+# 委譲ごとに Jev（要約→choice、閾値 0.5）で選び、鍵なし・失敗・低確信度・要約失敗は fallback へ倒す。
 delegate_resolve_model() {
   local agent="$1" task_path="$2"; shift 2
   local backends=("$@")
@@ -229,7 +229,7 @@ delegate_resolve_model() {
     criteria="$(delegate_criteria_tsv "$tiers_file" "${backends[@]}")" || criteria=""
     if [ -z "$criteria" ]; then
       reason="none"
-    elif ! out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。" 0.6)"; then
+    elif ! out="$(delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。" 0.5)"; then
       reason="${DELEGATE_JEV_LAST_ERROR:-http_error}"
     else
       IFS=$'\t' read -r choice conf <<< "$out"
