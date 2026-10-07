@@ -15,7 +15,9 @@
 #         stderr に失敗理由を1行出す。ファイル不在・古いままの扱いは利用側の責務とする。
 set -euo pipefail
 
-LLM_MODELS_MAX_AGE_SECONDS="${LLM_MODELS_MAX_AGE_SECONDS:-86400}" # 一覧・キャッシュの鮮度（1日）
+LLM_MODELS_MAX_AGE_SECONDS=86400 # 一覧・キャッシュの鮮度（1日）
+LLM_MODELS_CLAUDE_MODELS_URL="https://platform.claude.com/docs/en/about-claude/models/overview.md" # claude モデルの公式 docs
+LLM_MODELS_CLAUDE_MODELS_TIMEOUT=20 # claude モデルキャッシュ取得のタイムアウト（秒）
 
 # このスクリプトの実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
 LLM_MODELS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,7 +40,6 @@ llm_models_is_fresh() {
 # 失敗したら既存キャッシュに触れず、理由を1行出して非0。
 llm_models_refresh_codex_cache() {
   local cache_file="$1" tmp_file="$1.tmp" raw_file="$1.raw"
-  local cmd="${LLM_MODELS_CODEX_MODELS_CMD:-codex debug models}"
 
   if ! command -v jq >/dev/null 2>&1; then
     printf 'error: jq is required to normalize codex model cache\n' >&2
@@ -46,9 +47,9 @@ llm_models_refresh_codex_cache() {
   fi
 
   mkdir -p "$(dirname "$cache_file")"
-  if ! bash -c "$cmd" > "$raw_file"; then
+  if ! codex debug models > "$raw_file"; then
     rm -f "$raw_file" "$tmp_file"
-    printf 'error: failed to refresh codex model cache with official CLI command: %s\n' "$cmd" >&2
+    printf 'error: failed to refresh codex model cache with official CLI command: codex debug models\n' >&2
     return 1
   fi
 
@@ -73,10 +74,10 @@ llm_models_refresh_codex_cache() {
 # 失敗したら既存キャッシュに触れず、理由を1行出して非0。
 llm_models_refresh_claude_cache() {
   local cache_file="$1" tmp_file="$1.tmp"
-  local url="${LLM_MODELS_CLAUDE_MODELS_URL:-https://platform.claude.com/docs/en/about-claude/models/overview.md}"
+  local url="$LLM_MODELS_CLAUDE_MODELS_URL"
 
   mkdir -p "$(dirname "$cache_file")"
-  if ! curl -fsSL --max-time "${LLM_MODELS_CLAUDE_MODELS_TIMEOUT:-20}" "$url" > "$tmp_file"; then
+  if ! curl -fsSL --max-time "$LLM_MODELS_CLAUDE_MODELS_TIMEOUT" "$url" > "$tmp_file"; then
     rm -f "$tmp_file"
     printf 'error: failed to refresh claude model cache from public official docs: %s\n' "$url" >&2
     return 1
