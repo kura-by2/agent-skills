@@ -5,3 +5,5 @@
 !codex-exec.sh
 !impl-exec.sh
 !write-input.sh
+!fallback/
+!fallback/.keep

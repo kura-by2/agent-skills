@@ -1,3 +1,5 @@
 *
 !.gitignore
 !script.sh
+!.model-cache/
+!.model-cache/.keep

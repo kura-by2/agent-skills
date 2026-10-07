@@ -142,7 +142,6 @@ delegate_rebuild_fallback() {
     rm -f "$tmp"
     return 1
   fi
-  mkdir -p "$(dirname "$fallback_file")"
   mv "$tmp" "$fallback_file"
 }
 
