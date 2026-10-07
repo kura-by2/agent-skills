@@ -88,7 +88,6 @@ delegate_jev_choice() {
 
 delegate_backend_from_model() {
   case "$1" in
-    gpt-*) printf 'codex\n' ;;
     claude-*) printf 'claude\n' ;;
     *) return 1 ;;
   esac
