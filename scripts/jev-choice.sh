@@ -34,14 +34,14 @@ choices_file="${3:-}"
 
 # --- デバッグ用: Jev の応答を記録する（本体の判定・出力・終了コードには影響しない） ---
 # どういった文章に対してどのモデルをどの確信度で選んだかを後で分析するための仕掛け。
-# 呼び出し元が stderr を捨てても見られるよう、プロジェクトルート直下の log/ に
+# 呼び出し元が stderr を捨てても見られるよう、プロジェクトルート直下の logs/ に
 # 1 呼び出し 1 行の JSON で追記する。
 # 鍵（JEV_API_KEY）は記録しない。state（委譲指示をマスキング済みの要約文）は記録する。
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 project_root="$("$script_dir/project-root.sh" 2>/dev/null || true)"
 # プロジェクトルートが解決できなければログを書かずに本体は続行する。
 if [ -n "$project_root" ]; then
-  DEBUG_LOG="$project_root/log/jev-choice.jsonl"
+  DEBUG_LOG="$project_root/logs/jev-choice.jsonl"
 else
   DEBUG_LOG=""
 fi
