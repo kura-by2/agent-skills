@@ -22,10 +22,15 @@ LLM_MODELS_CLAUDE_MODELS_TIMEOUT=20 # claude モデルキャッシュ取得の�
 # このスクリプトの実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
 LLM_MODELS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLM_MODELS_FILE="$LLM_MODELS_DIR/llm-models.tsv"
-LLM_MODELS_CACHE_DIR="$LLM_MODELS_DIR/.model-cache"
 
+# backend 別のモデルキャッシュは script.sh と同じディレクトリ直下に置く。
+# claude は公式 docs Markdown、codex は JSON なので拡張子を分ける。
 llm_models_cache_file_for_backend() {
-  printf '%s/%s-models.json\n' "$LLM_MODELS_CACHE_DIR" "$1"
+  case "$1" in
+    claude) printf '%s/claude-models-cache.md\n' "$LLM_MODELS_DIR" ;;
+    codex) printf '%s/codex-models-cache.json\n' "$LLM_MODELS_DIR" ;;
+    *) printf 'error: unknown backend: %s\n' "$1" >&2; return 1 ;;
+  esac
 }
 
 llm_models_is_fresh() {
