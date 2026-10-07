@@ -32,6 +32,7 @@ DELEGATE_LLM_MODELS_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/script.sh"
 DELEGATE_LLM_MODELS_FILE="$DELEGATE_SCRIPTS_DIR/llm-models/llm-models.json"
 DELEGATE_CRITERIA_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/criteria.sh"
 DELEGATE_FILE_FRESH_SCRIPT="$DELEGATE_SCRIPTS_DIR/file-fresh.sh"
+DELEGATE_PROJECT_ROOT_SCRIPT="$DELEGATE_SCRIPTS_DIR/project-root.sh"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -93,18 +94,36 @@ delegate_backend_from_model() {
   esac
 }
 
+# このエージェントの定義ファイル（プロジェクトルートの .claude/agents/<agent>.md）。
+# impl は codex backend 分も含めこのファイル（impl.md）を使う。プロジェクトルートは共通スクリプトで解決する。
+delegate_agent_def_file() {
+  local root
+  root="$("$DELEGATE_PROJECT_ROOT_SCRIPT")" || return 1
+  printf '%s/.claude/agents/%s.md\n' "$root" "$1"
+}
+
 # この backend のフォールバックを Jev で再生成する。1問判定してモデル名1行を書く。
-# Jev がモデルを返さなければ非0を返し、既存ファイルは上書きしない。
+# state にはこのスキルのエージェント定義（.claude/agents/<agent>.md）を伏せ字化して渡し、その役割に合うモデルを選ばせる。
+# 定義ファイルが無い／伏せ字化に失敗したときはこの backend の再選定失敗とし、Jev がモデルを返さなければ非0を返す（既存ファイルは上書きしない）。
 delegate_rebuild_fallback() {
   local agent="$1" backend="$2" fallback_file="$3"
-  local criteria choice conf tmp
+  local criteria def_file state choice conf tmp
   criteria="$("$DELEGATE_CRITERIA_SCRIPT" "$backend")" || criteria=""
   if [ -z "$criteria" ]; then
     printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
     return 1
   fi
-  if ! delegate_jev_choice "作業全般に標準的に使うモデルを1つ選ぶ。" "$criteria" \
-    "この backend の既定として最も適したモデルを選ぶ。"; then
+  def_file="$(delegate_agent_def_file "$agent")" || def_file=""
+  if [ -z "$def_file" ] || [ ! -f "$def_file" ]; then
+    printf 'delegate %s fallback-gen: backend=%s source=none reason=agent_def_missing\n' "$agent" "$backend" >&2
+    return 1
+  fi
+  if ! state="$(delegate_summarize_task "$def_file")"; then
+    printf 'delegate %s fallback-gen: backend=%s source=none reason=summary_failed\n' "$agent" "$backend" >&2
+    return 1
+  fi
+  if ! delegate_jev_choice "$state" "$criteria" \
+    "このエージェントの役割の既定として最も適したモデルを選ぶ。"; then
     printf 'delegate %s fallback-gen: backend=%s source=none reason=%s\n' \
       "$agent" "$backend" "${DELEGATE_JEV_LAST_ERROR:-none}" >&2
     return 1
