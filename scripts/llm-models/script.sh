@@ -6,6 +6,7 @@
 # 役割:
 #   - llm-models.tsv の日次再生成（1日以上前/不在のときだけ作り直す。新しければ何もしない）
 #   - モデルキャッシュ（codex: codex debug models / claude: 公式 docs Markdown）の取得
+#     claude は overview に加え、overview の「Model page」行が指す各モデルの個別ページも取得する
 #   - 退役済みモデルの除外
 #
 # description はキャッシュの公式説明文をそのまま入れる（要約しない）。
@@ -13,6 +14,7 @@
 #
 # 失敗時: 再生成に失敗したら既存の一覧ファイル・キャッシュには触らず、非0で終了し、
 #         stderr に失敗理由を1行出す。ファイル不在・古いままの扱いは利用側の責務とする。
+#         claude の個別ページのどれかの取得・抽出に失敗した場合もこの扱いに従う。
 set -euo pipefail
 
 LLM_MODELS_MAX_AGE_SECONDS=86400 # 一覧・キャッシュの鮮度（1日）
@@ -25,12 +27,24 @@ LLM_MODELS_FILE="$LLM_MODELS_DIR/llm-models.tsv"
 
 # backend 別のモデルキャッシュは script.sh と同じディレクトリ直下に置く。
 # claude は公式 docs Markdown、codex は JSON なので拡張子を分ける。
+# claude の個別ページキャッシュも同じ直下に claude-model-<slug>-cache.md で置く。
 llm_models_cache_file_for_backend() {
   case "$1" in
     claude) printf '%s/claude-models-cache.md\n' "$LLM_MODELS_DIR" ;;
     codex) printf '%s/codex-models-cache.json\n' "$LLM_MODELS_DIR" ;;
     *) printf 'error: unknown backend: %s\n' "$1" >&2; return 1 ;;
   esac
+}
+
+# claude 個別ページの URL（.../models/<slug>/overview）から slug を取り出す。
+llm_models_claude_slug_from_url() {
+  local u="${1%/overview}"
+  printf '%s\n' "${u##*/}"
+}
+
+# claude 個別ページキャッシュのパス。
+llm_models_claude_page_cache_file() {
+  printf '%s/claude-model-%s-cache.md\n' "$LLM_MODELS_DIR" "$1"
 }
 
 llm_models_is_fresh() {
@@ -74,23 +88,115 @@ llm_models_refresh_codex_cache() {
   mv "$tmp_file" "$cache_file"
 }
 
-# claude のモデルキャッシュ（公式 docs Markdown）を取得する。取得できたときだけ差し替える。
-# 失敗したら既存キャッシュに触れず、理由を1行出して非0。
-llm_models_refresh_claude_cache() {
-  local cache_file="$1" tmp_file="$1.tmp"
-  local url="$LLM_MODELS_CLAUDE_MODELS_URL"
-
+# 公開 docs の Markdown を1本取得して dest に差し替える。取得できたときだけ差し替える。
+# 失敗（取得不可・空応答）したら既存ファイルに触れず、理由を1行出して非0。
+llm_models_fetch_md() {
+  local url="$1" dest="$2" tmp_file="$2.tmp"
   if ! curl -fsSL --max-time "$LLM_MODELS_CLAUDE_MODELS_TIMEOUT" "$url" > "$tmp_file"; then
     rm -f "$tmp_file"
-    printf 'error: failed to refresh claude model cache from public official docs: %s\n' "$url" >&2
+    printf 'error: failed to fetch claude model docs markdown: %s\n' "$url" >&2
     return 1
   fi
   if [ ! -s "$tmp_file" ]; then
     rm -f "$tmp_file"
-    printf 'error: claude model cache refresh returned an empty response: %s\n' "$url" >&2
+    printf 'error: claude model docs markdown returned an empty response: %s\n' "$url" >&2
     return 1
   fi
-  mv "$tmp_file" "$cache_file"
+  mv "$tmp_file" "$dest"
+}
+
+# overview キャッシュから「Model page」行が指す各モデルの個別ページ URL を列挙する。
+# 比較表の「Model page」行に載っているモデルだけが対象（本文中の旧モデルリンクは対象外）。
+llm_models_claude_model_page_urls() {
+  awk -F'|' '
+    function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    /^[ \t]*\|/ {
+      if (tolower(trim($2)) == "model page") {
+        for (c = 3; c <= NF; c++) {
+          line = $c
+          while (match(line, /\]\([^)]*\)/)) {
+            print substr(line, RSTART + 2, RLENGTH - 3)
+            line = substr(line, RSTART + RLENGTH)
+          }
+        }
+        exit
+      }
+    }
+  ' "$1"
+}
+
+# claude 個別ページ1枚から "model_id<TAB>description" を1行抽出する。
+# model: `Model ID: `...`` の値。
+# description: 冒頭の1行説明 ＋ 「How it compares」表の「(this model)」行の各値（列名付き）を連結。
+# 構造が想定と違い Model ID が取れない場合は非0（fail-closed）。
+llm_models_claude_extract_row() {
+  awk '
+    function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    function strip_links(s,  out, txt){
+      out = s
+      while (match(out, /\[[^]]*\]\([^)]*\)/)) {
+        txt = substr(out, RSTART, RLENGTH); sub(/^\[/, "", txt); sub(/\].*/, "", txt)
+        out = substr(out, 1, RSTART - 1) txt substr(out, RSTART + RLENGTH)
+      }
+      return out
+    }
+    BEGIN { id = ""; got = 0; desc = ""; inc = 0; haveheader = 0 }
+    # Model ID 行。ここまでに拾った最後の素の行を1行説明とする。
+    got == 0 && /^Model ID:/ {
+      s = $0; sub(/^Model ID:[ \t]*/, "", s); gsub(/`/, "", s); id = trim(s); got = 1; next
+    }
+    # Model ID より前の素のテキスト行（見出し・表・箇条書き・太字注記を除く）を説明候補にする。
+    got == 0 {
+      t = trim($0)
+      if (t != "" && t !~ /^\*\*/ && t !~ /^#/ && t !~ /^\|/ && t !~ /^-/) desc = t
+      next
+    }
+    /^##[ \t]/ { inc = ($0 ~ /How it compares/) ? 1 : 0; next }
+    inc == 1 && /^[ \t]*\|/ {
+      if ($0 ~ /^[ \t]*\|[ :|-]+$/) next
+      nf = split($0, a, "|")   # a[1] と a[nf] は先頭/末尾 | の外側で空。セルは a[2..nf-1]。
+      if (haveheader == 0) {
+        for (i = 2; i < nf; i++) label[i] = strip_links(trim(a[i]))
+        haveheader = 1
+        next
+      }
+      if ($0 ~ /\(this model\)/) {
+        for (i = 3; i < nf; i++) {   # i=2 は Model 名の列なので説明に含めない
+          v = strip_links(trim(a[i]))
+          if (v == "") continue
+          desc = desc (desc == "" ? "" : "; ") label[i] ": " v
+        }
+      }
+      next
+    }
+    END {
+      if (id == "") exit 1
+      gsub(/\t/, " ", desc)
+      print id "\t" desc
+    }
+  ' "$1"
+}
+
+# claude のキャッシュ群（overview ＋ 個別ページ）を1日鮮度で確保する。
+# overview を確保し、「Model page」行の各 URL について <url>.md を確保する。
+# いずれかの取得に失敗したら既存キャッシュに触れず、理由を1行出して非0（fail-closed）。
+llm_models_refresh_claude_caches() {
+  local overview_cache="$1" url slug page_cache
+  if ! llm_models_is_fresh "$overview_cache"; then
+    llm_models_fetch_md "$LLM_MODELS_CLAUDE_MODELS_URL" "$overview_cache" || return 1
+  fi
+  while IFS= read -r url; do
+    [ -n "$url" ] || continue
+    slug="$(llm_models_claude_slug_from_url "$url")"
+    if [ -z "$slug" ]; then
+      printf 'error: cannot derive claude model slug from model page url: %s\n' "$url" >&2
+      return 1
+    fi
+    page_cache="$(llm_models_claude_page_cache_file "$slug")"
+    if ! llm_models_is_fresh "$page_cache"; then
+      llm_models_fetch_md "$url.md" "$page_cache" || return 1
+    fi
+  done < <(llm_models_claude_model_page_urls "$overview_cache")
 }
 
 # backend のキャッシュを1日鮮度で確保する。新しければそのまま、古い/不在なら再取得する。
@@ -98,18 +204,22 @@ llm_models_refresh_claude_cache() {
 llm_models_ensure_cache() {
   local backend="$1" cache_file
   cache_file="$(llm_models_cache_file_for_backend "$backend")"
-  if llm_models_is_fresh "$cache_file"; then
-    return 0
-  fi
   case "$backend" in
-    codex) llm_models_refresh_codex_cache "$cache_file" ;;
-    claude) llm_models_refresh_claude_cache "$cache_file" ;;
+    codex)
+      llm_models_is_fresh "$cache_file" && return 0
+      llm_models_refresh_codex_cache "$cache_file"
+      ;;
+    claude)
+      # 個別ページごとに鮮度を見るため overview の鮮度では早期 return しない。
+      llm_models_refresh_claude_caches "$cache_file"
+      ;;
     *) printf 'error: unknown backend: %s\n' "$backend" >&2; return 1 ;;
   esac
 }
 
 # キャッシュから退役していない利用可能モデルを "model<TAB>description" で列挙する。
-# description は公式説明文（codex は description / claude は比較表の属性連結）をそのまま使う。
+# description は公式説明文（codex は description / claude は個別ページの説明＋比較値）をそのまま使う。
+# claude は個別ページの取得・抽出に失敗したら非0（fail-closed）。
 llm_models_catalog_rows() {
   local backend="$1" cache_file
   cache_file="$(llm_models_cache_file_for_backend "$backend")"
@@ -128,46 +238,26 @@ llm_models_catalog_rows() {
       ' "$cache_file"
       ;;
     claude)
-      # 公式 docs Markdown のモデル比較表は「列=モデル / 行=属性」。
-      # 「Claude API ID」行から各列のモデル id を取り、その列の他属性を
-      # 「属性: 値」で連結して description にする。退役言及の行は除く。
-      # 表が想定の形式でない（ID 行が無い）場合は何も出さない。
-      awk -F'|' '
-        function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-        function delink(s,  m, txt){
-          while (match(s, /\[[^]]*\]\([^)]*\)/)) {
-            m = substr(s, RSTART, RLENGTH); txt = m
-            sub(/^\[/, "", txt); sub(/\].*/, "", txt)
-            s = substr(s, 1, RSTART - 1) txt substr(s, RSTART + RLENGTH)
-          }
-          return s
-        }
-        /^[ \t]*\|/ {
-          if ($0 ~ /^[ \t]*\|[ :|-]+$/) next
-          nr++
-          labels[nr] = delink(trim($2))
-          ncol = NF - 1
-          for (c = 3; c <= ncol; c++) cell[nr, c] = delink(trim($c))
-          if (tolower(labels[nr]) ~ /claude api id/) idrow = nr
-          next
-        }
-        END {
-          if (idrow == "") exit
-          for (c = 3; c <= ncol; c++) {
-            id = cell[idrow, c]; gsub(/`/, "", id)
-            if (id == "") continue
-            desc = ""
-            for (r = 2; r <= nr; r++) {
-              if (r == idrow || labels[r] == "") continue
-              if (tolower(labels[r]) ~ /deprecat|retir/) continue
-              v = cell[r, c]; if (v == "") continue
-              desc = desc (desc == "" ? "" : "; ") labels[r] ": " v
-            }
-            gsub(/\t/, " ", desc)
-            print id "\t" desc
-          }
-        }
-      ' "$cache_file"
+      # overview の「Model page」行 → 各個別ページ .md の2段で組み立てる。
+      local urls url slug page_cache
+      urls="$(llm_models_claude_model_page_urls "$cache_file")" || return 1
+      if [ -z "$urls" ]; then
+        printf 'error: no model page links found in claude overview cache: %s\n' "$cache_file" >&2
+        return 1
+      fi
+      while IFS= read -r url; do
+        [ -n "$url" ] || continue
+        slug="$(llm_models_claude_slug_from_url "$url")"
+        page_cache="$(llm_models_claude_page_cache_file "$slug")"
+        if [ ! -f "$page_cache" ]; then
+          printf 'error: claude per-model page cache is missing: %s\n' "$page_cache" >&2
+          return 1
+        fi
+        if ! llm_models_claude_extract_row "$page_cache"; then
+          printf 'error: failed to extract model row from claude per-model page: %s\n' "$page_cache" >&2
+          return 1
+        fi
+      done <<< "$urls"
       ;;
     *) printf 'error: unknown backend: %s\n' "$backend" >&2; return 1 ;;
   esac
@@ -178,7 +268,7 @@ llm_models_catalog_rows() {
 # 一覧は tmp に組み立て、全 backend 成功時だけ本体へ差し替える。
 llm_models_rebuild() {
   local backends=("$@")
-  local tmp backend model desc any=0
+  local tmp backend model desc rows any=0
   tmp="$(mktemp)"
   printf '# backend\tmodel\tdescription\n' > "$tmp"
   for backend in "${backends[@]}"; do
@@ -186,11 +276,16 @@ llm_models_rebuild() {
       rm -f "$tmp"
       return 1
     fi
+    # 列挙の失敗を取りこぼさないよう、exit code を捕捉してから流し込む。
+    if ! rows="$(llm_models_catalog_rows "$backend")"; then
+      rm -f "$tmp"
+      return 1
+    fi
     while IFS=$'\t' read -r model desc; do
       [ -n "$model" ] || continue
       printf '%s\t%s\t%s\n' "$backend" "$model" "$desc" >> "$tmp"
       any=1
-    done < <(llm_models_catalog_rows "$backend")
+    done <<< "$rows"
   done
   if [ "$any" -eq 0 ]; then
     rm -f "$tmp"
