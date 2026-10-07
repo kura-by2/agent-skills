@@ -6,18 +6,19 @@
 # 役割:
 #   - delegate-models.tsv の日次再生成（1日以上前/不在のときだけ作り直す）
 #   - モデルキャッシュ（codex: codex debug models / claude: 公式 docs Markdown）の管理
-#   - 各モデルの1行要約を設定から隔離した claude -p --model haiku で作成
+#   - 要約に使うモデルを Jev で選び、24時間固定で state に保存
+#   - 各モデルの1行要約を、設定から隔離した claude（保存済みの要約モデル）で作成
 #
 # 接続先は api.typesafe.ai 等の外部に鍵・本文を送らない。要約には隔離した claude を使う。
 set -euo pipefail
 
-DELEGATE_MAX_AGE_SECONDS="${DELEGATE_MAX_AGE_SECONDS:-86400}" # delegate-models・キャッシュの鮮度（1日）
-DELEGATE_SUMMARY_MODEL="${DELEGATE_SUMMARY_MODEL:-haiku}"
+DELEGATE_MAX_AGE_SECONDS="${DELEGATE_MAX_AGE_SECONDS:-86400}" # delegate-models・キャッシュ・要約モデルの鮮度（1日）
 
 # リポジトリ直下の共通スクリプト群。スキルが symlink 経由で呼ばれても実体から解決する。
 DELEGATE_SCRIPTS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts"
 DELEGATE_PROJECT_ROOT_SCRIPT="$DELEGATE_SCRIPTS_DIR/project-root.sh"
 DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize.sh"
+DELEGATE_JEV_CHOICE_SCRIPT="$DELEGATE_SCRIPTS_DIR/jev-choice.sh"
 
 delegate_state_dir() {
   local project_dir
@@ -188,9 +189,84 @@ delegate_catalog_rows() {
   esac
 }
 
-# 要約専用に claude を隔離実行する共通スクリプトに委ねる。
+# 要約に使うモデルは Jev で選んで state に保存したファイルから読む（24時間固定）。
+delegate_summary_model_file() {
+  local state_dir
+  state_dir="$(delegate_state_dir)" || return 1
+  printf '%s/summary-model\n' "$state_dir"
+}
+
+# 保存済みの要約モデル名を1行で返す。ファイル不在・空なら非0。
+delegate_read_summary_model() {
+  local f model
+  f="$(delegate_summary_model_file)" || return 1
+  [ -f "$f" ] || return 1
+  model="$(sed -n '1{s/^[[:space:]]*//; s/[[:space:]]*$//; p;}' "$f")"
+  [ -n "$model" ] || return 1
+  printf '%s\n' "$model"
+}
+
+# 要約モデルの選択肢（claude backend）を "model<TAB>説明" で出す。
+# summarize.sh は claude で動くので候補は claude の行に限る。
+# delegate-models.tsv があればその summary を、無ければモデルキャッシュの説明文を説明に使う。
+delegate_summary_candidates() {
+  local state_dir tiers_file
+  state_dir="$(delegate_state_dir)" || return 1
+  tiers_file="$state_dir/delegate-models.tsv"
+  if [ -f "$tiers_file" ]; then
+    awk -F '\t' '$0 !~ /^#/ && NF >= 3 && $1 == "claude" { print $2 "\t" $3 }' "$tiers_file"
+    return 0
+  fi
+  delegate_try_cache claude || return 1
+  delegate_catalog_rows claude
+}
+
+# 固定の問いで Jev に要約モデルを1つ選ばせる。標準出力にモデル名。失敗・低確信度は非0。
+delegate_select_summary_model() {
+  local candidates out choice conf
+  candidates="$(delegate_summary_candidates)" || return 1
+  [ -n "$candidates" ] || return 1
+  out="$(printf '%s' "$candidates" | "$DELEGATE_JEV_CHOICE_SCRIPT" --min-confidence 0.6 \
+    "要約タスクに使うモデルを選ぶ。" "要約するのに適切なモデルはどれ？" 2>/dev/null)" || return 1
+  IFS=$'\t' read -r choice conf <<< "$out"
+  [ -n "$choice" ] || return 1
+  printf '%s\n' "$choice"
+}
+
+# 要約モデルを24時間固定で確保する。保存ファイルが1日以上前または不在のときだけ Jev で選び直す。
+# 選び直しに失敗（Jev 失敗・低確信度含む）したら前回値をそのまま使う。前回値も無ければ非0終了。
+delegate_ensure_summary_model() {
+  local file prev chosen
+  file="$(delegate_summary_model_file)" || return 1
+
+  if delegate_is_fresh "$file"; then
+    printf 'delegate summary-model: fresh (%s); nothing to do\n' "$(date -r "$file" '+%Y-%m-%d')" >&2
+    return 0
+  fi
+
+  prev="$(delegate_read_summary_model 2>/dev/null)" || prev=""
+
+  if chosen="$(delegate_select_summary_model)"; then
+    mkdir -p "$(dirname "$file")"
+    printf '%s\n' "$chosen" > "$file"
+    printf 'delegate summary-model: selected %s via Jev\n' "$chosen" >&2
+    return 0
+  fi
+
+  if [ -n "$prev" ]; then
+    printf 'warning: delegate could not reselect summary model via Jev; keeping previous (%s)\n' "$prev" >&2
+    return 0
+  fi
+
+  printf 'error: delegate cannot determine the summary model. Write a model name (e.g. a claude model) into %s to continue.\n' "$file" >&2
+  return 1
+}
+
+# 要約専用に claude を隔離実行する共通スクリプトに委ねる。モデルは保存済みの要約モデルを使う。
 delegate_summary_llm() {
-  "$DELEGATE_SUMMARIZE_SCRIPT" "$1" "$DELEGATE_SUMMARY_MODEL"
+  local model
+  model="$(delegate_read_summary_model)" || return 1
+  "$DELEGATE_SUMMARIZE_SCRIPT" "$1" "$model"
 }
 
 # 応答が1行要約として妥当か判定する。空・複数行・長すぎ・拒否文は不正（非0）。
@@ -205,7 +281,7 @@ delegate_summary_ok() {
   return 0
 }
 
-# モデル1件の1行要約を隔離した claude -p --model haiku で作る。
+# モデル1件の1行要約を、隔離した claude（保存済みの要約モデル）で作る。
 # 根拠はキャッシュの説明文（参考情報）だけに限る。応答が要約として不正なら description を使う。
 delegate_summarize_model() {
   local backend="$1" model="$2" desc="$3" raw="" out=""
@@ -268,4 +344,5 @@ delegate_refresh_model_tiers() {
   return 0
 }
 
+delegate_ensure_summary_model
 delegate_refresh_model_tiers

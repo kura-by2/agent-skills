@@ -13,7 +13,6 @@
 # を読むだけで、不在なら fail-closed（委譲しない）。
 # 接続先は api.typesafe.ai に固定する。鍵の値と指示ファイル本文はログ・出力に書かない。
 
-DELEGATE_SUMMARY_MODEL="${DELEGATE_SUMMARY_MODEL:-haiku}"
 DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレース用）
 
 # リポジトリ直下の共通スクリプト群。スキルが symlink 経由で呼ばれても実体から解決する。
@@ -35,9 +34,28 @@ delegate_state_dir() {
   printf '%s/state/delegate\n' "$project_dir"
 }
 
-# 要約専用に claude を隔離実行する共通スクリプトに委ねる。
+# 要約に使うモデルは delegate-models スキルが選んで state に保存したファイルから読む。
+delegate_summary_model_file() {
+  local state_dir
+  state_dir="$(delegate_state_dir)" || return 1
+  printf '%s/summary-model\n' "$state_dir"
+}
+
+# 保存済みの要約モデル名を1行で返す。ファイル不在・空なら非0。
+delegate_read_summary_model() {
+  local f model
+  f="$(delegate_summary_model_file)" || return 1
+  [ -f "$f" ] || return 1
+  model="$(sed -n '1{s/^[[:space:]]*//; s/[[:space:]]*$//; p;}' "$f")"
+  [ -n "$model" ] || return 1
+  printf '%s\n' "$model"
+}
+
+# 要約専用に claude を隔離実行する共通スクリプトに委ねる。モデルは保存済みの要約モデルを使う。
 delegate_summary_llm() {
-  "$DELEGATE_SUMMARIZE_SCRIPT" "$1" "$DELEGATE_SUMMARY_MODEL"
+  local model
+  model="$(delegate_read_summary_model)" || return 1
+  "$DELEGATE_SUMMARIZE_SCRIPT" "$1" "$model"
 }
 
 # 応答が1行要約として妥当か判定する。空・複数行・長すぎ・拒否文は不正（非0）。
@@ -156,7 +174,7 @@ delegate_ensure_tiers_and_fallback() {
   return 0
 }
 
-# 指示ファイル本文を claude -p --model haiku で「作業の種類」だけの日本語1文に要約する。
+# 指示ファイル本文を保存済みの要約モデルで「作業の種類」だけの日本語1文に要約する。
 # 固有名詞・パス・URL・鍵・コードを含めない。失敗・空は非0。
 delegate_summarize_task() {
   local task_path="$1" raw out

@@ -3,8 +3,8 @@
 # どのスキルからも呼ぶ。
 #
 # 使い方:
-#   summarize.sh <prompt> [model]
-#   model 省略時は環境変数 DELEGATE_SUMMARY_MODEL（既定 haiku）を使う。
+#   summarize.sh <prompt> <model>
+#   model は必須。どのモデルで要約するかは呼び出し側が決めて渡す。
 #
 # 呼び出し元プロジェクトの設定・hooks・MCP ツール・CLAUDE.md を読み込ませない
 # （空の作業ディレクトリ・setting-sources なし・strict-mcp-config）。
@@ -15,7 +15,11 @@
 set -u
 
 prompt="${1:-}"
-model="${2:-${DELEGATE_SUMMARY_MODEL:-haiku}}"
+model="${2:-}"
+if [ -z "$model" ]; then
+  printf 'error: summarize.sh requires a model as the second argument\n' >&2
+  exit 2
+fi
 
 workdir="$(mktemp -d)" || exit 1
 ( cd "$workdir" && claude -p "$prompt" --model "$model" \

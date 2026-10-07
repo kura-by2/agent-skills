@@ -29,7 +29,7 @@ sub エージェントは書き込み不可。コード実装・修正・ファ�
 
 - **モデル一覧（`$AGENT_PROJECT_DIR/state/delegate/delegate-models.tsv`）**: `backend<TAB>model<TAB>summary` の3列。委譲の前に、委譲先モデル一覧（delegate-models.tsv）の鮮度を確認・更新するスキルを実行する（必要なら作り直し、新しければそのまま）。このスキルの実行スクリプトは delegate-models.tsv を読むだけで、不在なら fail-closed（委譲しない）。
 - **フォールバック（`$AGENT_PROJECT_DIR/state/delegate/fallback/sub.tsv`）**: `backend<TAB>model`。delegate-models.tsv が自分の `fallback/sub.tsv` より新しい（または fallback が不在）のときに claude の1行を Jev の choice で生成する。Jev が失敗したら既存ファイルを残す。
-- **委譲ごとの判定**: 指示ファイル本文を `claude -p --model haiku` で「作業の種類」だけの日本語1文（固有名詞・パス・URL・鍵・コードを含まない）に要約し、その要約を Jev に送って delegate-models の中から使うモデルを choice で判定する。候補は claude のみ。確信度 0.6 未満・鍵なし・HTTP 失敗・3秒超過・要約失敗のときは `fallback/sub.tsv` を使う。
+- **委譲ごとの判定**: 指示ファイル本文を、delegate-models が選んだ要約モデルで「作業の種類」だけの日本語1文（固有名詞・パス・URL・鍵・コードを含まない）に要約し、その要約を Jev に送って delegate-models の中から使うモデルを choice で判定する。候補は claude のみ。確信度 0.6 未満・鍵なし・HTTP 失敗・3秒超過・要約失敗のときは `fallback/sub.tsv` を使う。
 - 指示ファイル本文は Jev に送らない（要約のみ）。接続先は `api.typesafe.ai` に固定し、鍵の値と本文はログ・出力に書かない。
 
 ## バックエンド
