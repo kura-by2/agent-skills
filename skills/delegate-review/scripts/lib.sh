@@ -56,15 +56,11 @@ delegate_summary_llm() {
   "$DELEGATE_SUMMARIZE_SCRIPT" "$1"
 }
 
-# 応答が1行要約として妥当か判定する。空・複数行・長すぎ・拒否文は不正（非0）。
+# マスキング後の本文として妥当か判定する。空のみ不正（非0）。
+# 本文は複数行・長文になり、拒否文言の語も普通に現れ得るため、行数・長さ・拒否文での判定はしない。
 delegate_summary_ok() {
   local raw="$1"
   [ -n "$raw" ] || return 1
-  case "$raw" in *$'\n'*) return 1 ;; esac
-  [ "${#raw}" -le 120 ] || return 1
-  case "$raw" in
-    *申し訳*|*できません*|*ありません*|*わかりません*|*知識*) return 1 ;;
-  esac
   return 0
 }
 
@@ -179,19 +175,18 @@ delegate_ensure_tiers_and_fallback() {
   return 1
 }
 
-# 指示ファイル本文を保存済みの要約モデルで「作業の種類」だけの日本語1文に要約する。
-# 固有名詞・パス・URL・鍵・コードを含めない。失敗・空は非0。
+# 指示ファイル本文を保存済みの要約モデルでマスキングする。構成・作業内容・範囲・条件は残し、
+# 機密情報・固有名詞・パス・URL・識別子・コード・インシデント情報だけを汎用の伏せ字に置き換える。
+# 要約・圧縮はしない。失敗・空は非0。
 delegate_summarize_task() {
-  local task_path="$1" raw out
+  local task_path="$1" raw
   [ -f "$task_path" ] || return 1
   [ "${DELEGATE_SKIP_LLM:-}" != "1" ] || return 1
-  raw="$(delegate_summary_llm "次の委譲指示を日本語1文で要約してください。出力は『どんな種類の作業か（作業の種類と対象の種別）』だけにし、固有名詞・ファイルパス・URL・識別子・鍵・コード・引用された文字列は一切含めないこと。要約文のみを返すこと。
+  raw="$(delegate_summary_llm "次の委譲指示を、構成・作業内容・範囲・条件はそのまま残し、機密情報（鍵・トークン・パスワード等）、固有名詞（人名・組織名・サービス名・リポジトリ名など）、ファイルパス・URL・識別子・コード、インシデントに関する情報だけを汎用の伏せ字（XXX 等の置き換え表現）にした本文を返してください。要約・圧縮はしないこと。前置き・説明なしで本文のみを返すこと。
 
 $(cat "$task_path")")" || return 1
   delegate_summary_ok "$raw" || return 1
-  out="$(printf '%s' "$raw" | tr '\n' ' ' | sed 's/\t/ /g; s/  */ /g; s/^ //; s/ $//')"
-  [ -n "$out" ] || return 1
-  printf '%s\n' "$out"
+  printf '%s\n' "$raw"
 }
 
 # fallback/<agent>.tsv から backend<TAB>model を1行取り出す。
@@ -215,7 +210,7 @@ delegate_fallback_model() {
 }
 
 # agent 用に使用モデルを決める。標準出力 "backend<TAB>model"。
-# 委譲ごとに Jev（要約→choice、閾値 0.5）で選び、鍵なし・失敗・低確信度・要約失敗は fallback へ倒す。
+# 委譲ごとに Jev（マスキング→choice、閾値 0.5）で選び、鍵なし・失敗・低確信度・マスキング失敗は fallback へ倒す。
 delegate_resolve_model() {
   local agent="$1" task_path="$2"; shift 2
   local backends=("$@")
