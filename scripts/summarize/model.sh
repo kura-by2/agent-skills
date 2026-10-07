@@ -20,7 +20,7 @@ set -u
 SUMMARIZE_MODEL_MAX_AGE_SECONDS=86400 # 要約モデルの鮮度（1日）
 SUMMARIZE_JEV_MIN_CONFIDENCE=0.6      # 要約モデル選択で要求する Jev の最低確信度
 SUMMARIZE_JEV_STATE='要約タスクに使うモデルを選ぶ。' # Jev に渡す状態（要約文）
-SUMMARIZE_JEV_INSTRUCTIONS='要約するのに適切なモデルはどれ？' # 固定の問い
+SUMMARIZE_JEV_INSTRUCTIONS='コストが低く、適切に要約できるモデルはどれ？' # 固定の問い
 
 # このスクリプトの実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
 SUMMARIZE_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
