@@ -192,7 +192,6 @@ llm_models_rebuild() {
     printf 'error: cannot build llm-models because no models were enumerated from any backend\n' >&2
     return 1
   fi
-  mkdir -p "$(dirname "$LLM_MODELS_FILE")"
   mv "$tmp" "$LLM_MODELS_FILE"
 }
 
