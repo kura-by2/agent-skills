@@ -232,7 +232,7 @@ delegate_resolve_model() {
     criteria="$(delegate_criteria_tsv "$tiers_file" "${backends[@]}")" || criteria=""
     if [ -z "$criteria" ]; then
       reason="none"
-    elif ! delegate_jev_choice "$summary" "$criteria" "この作業に最も適したモデルを選ぶ。" 0.5; then
+    elif ! delegate_jev_choice "$summary" "$criteria" "この作業にマッチした品質を担保できる、一番コストが低いモデルはどれ？" 0.5; then
       reason="${DELEGATE_JEV_LAST_ERROR:-http_error}"
     else
       IFS=$'\t' read -r choice conf <<< "$DELEGATE_JEV_LAST_OUTPUT"
