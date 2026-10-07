@@ -19,7 +19,7 @@ DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレー�
 DELEGATE_SCRIPTS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts"
 DELEGATE_JEV_CHOICE_SCRIPT="$DELEGATE_SCRIPTS_DIR/jev-choice.sh"
 DELEGATE_PROJECT_ROOT_SCRIPT="$DELEGATE_SCRIPTS_DIR/project-root.sh"
-DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize.sh"
+DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize/script.sh"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -34,28 +34,9 @@ delegate_state_dir() {
   printf '%s/state/delegate\n' "$project_dir"
 }
 
-# 要約に使うモデルは delegate-models スキルが選んで state に保存したファイルから読む。
-delegate_summary_model_file() {
-  local state_dir
-  state_dir="$(delegate_state_dir)" || return 1
-  printf '%s/summary-model\n' "$state_dir"
-}
-
-# 保存済みの要約モデル名を1行で返す。ファイル不在・空なら非0。
-delegate_read_summary_model() {
-  local f model
-  f="$(delegate_summary_model_file)" || return 1
-  [ -f "$f" ] || return 1
-  model="$(sed -n '1{s/^[[:space:]]*//; s/[[:space:]]*$//; p;}' "$f")"
-  [ -n "$model" ] || return 1
-  printf '%s\n' "$model"
-}
-
-# 要約専用に claude を隔離実行する共通スクリプトに委ねる。モデルは保存済みの要約モデルを使う。
+# 要約専用に claude を隔離実行する共通スクリプトに委ねる。要約モデルの選択はスクリプト側が担う。
 delegate_summary_llm() {
-  local model
-  model="$(delegate_read_summary_model)" || return 1
-  "$DELEGATE_SUMMARIZE_SCRIPT" "$1" "$model"
+  "$DELEGATE_SUMMARIZE_SCRIPT" "$1"
 }
 
 # 応答が1行要約として妥当か判定する。空・複数行・長すぎ・拒否文は不正（非0）。
