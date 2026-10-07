@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 # delegate-impl / delegate-sub / delegate-review 各スキルに同梱する実行基盤。
-# Jev の choice 判定だけはリポジトリ直下の scripts/jev-choice.sh を共有する。
-# それ以外は各スキル配下だけで完結する。
+# モデル一覧の取得・鮮度管理はリポジトリ直下の scripts/llm-models/ が担い、Jev の choice 判定は
+# scripts/jev-choice.sh を、指示本文の要約は scripts/summarize/script.sh を共有する。
+# フォールバックの保存など、それ以外は各スキル配下だけで完結する。
 #
 # 役割:
-#   - エージェント別フォールバック fallback/<agent>.tsv（backend<TAB>model）の生成
+#   - エージェント別フォールバック fallback/<agent>.tsv（backend<TAB>model）の生成・保持（24時間）
 #   - 委譲ごとの Jev によるモデル判定（本文は送らず要約のみ）
 #   - codex / claude（agent 指定）での委譲実行
 #
-# delegate-models.tsv（モデル一覧）の鮮度判定と再生成は別スキルが担う。委譲の前に、委譲先
-# モデル一覧の鮮度を確認・更新するスキルを実行しておくこと。このファイルは delegate-models.tsv
-# を読むだけで、不在なら fail-closed（委譲しない）。
+# モデルの候補元は scripts/llm-models/llm-models.tsv（backend<TAB>model<TAB>description）。委譲の前に
+# scripts/llm-models/script.sh を呼んで最新化する（失敗しても続行し、既存の一覧を使う）。一覧が
+# 不在なら Jev の候補が空になり、フォールバックへ倒れる。
 # 接続先は api.typesafe.ai に固定する。鍵の値と指示ファイル本文はログ・出力に書かない。
 
+DELEGATE_FALLBACK_MAX_AGE_SECONDS=86400 # フォールバックの鮮度（1日）
 DELEGATE_JEV_LAST_ERROR="" # 直近の Jev 判定失敗理由（経路トレース用）
+
+# このファイル（lib.sh）の実体があるディレクトリ。symlink 経由で呼ばれても実体から解決する。
+# フォールバックは、このスキルしか読まないので、ここ（自スキル配下・git 追跡外）に置く。
+DELEGATE_LIB_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # リポジトリ直下の共通スクリプト群。スキルが symlink 経由で呼ばれても実体から解決する。
 DELEGATE_SCRIPTS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts"
 DELEGATE_JEV_CHOICE_SCRIPT="$DELEGATE_SCRIPTS_DIR/jev-choice.sh"
-DELEGATE_PROJECT_ROOT_SCRIPT="$DELEGATE_SCRIPTS_DIR/project-root.sh"
 DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize/script.sh"
+DELEGATE_LLM_MODELS_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/script.sh"
+DELEGATE_LLM_MODELS_FILE="$DELEGATE_SCRIPTS_DIR/llm-models/llm-models.tsv"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -28,10 +35,18 @@ delegate_mark_sync_deadline_delegate() {
   : > "/tmp/claude-sync-deadline/$session.delegate" 2>/dev/null || true
 }
 
-delegate_state_dir() {
-  local project_dir
-  project_dir="$("$DELEGATE_PROJECT_ROOT_SCRIPT")" || return 1
-  printf '%s/state/delegate\n' "$project_dir"
+# この agent のフォールバックファイル（自スキル配下・git 追跡外）。
+delegate_fallback_file() {
+  printf '%s/fallback/%s.tsv\n' "$DELEGATE_LIB_DIR" "$1"
+}
+
+# ファイルが鮮度上限より新しければ 0、古い/不在なら非0。
+delegate_is_fresh() {
+  local f="$1" now mtime
+  [ -f "$f" ] || return 1
+  now="$(date +%s)"
+  mtime="$(date -r "$f" +%s 2>/dev/null)" || return 1
+  [ "$((now - mtime))" -lt "$DELEGATE_FALLBACK_MAX_AGE_SECONDS" ]
 }
 
 # 要約専用に claude を隔離実行する共通スクリプトに委ねる。要約モデルの選択はスクリプト側が担う。
@@ -51,7 +66,7 @@ delegate_summary_ok() {
   return 0
 }
 
-# delegate-models から指定 backend 群の model->summary を "名前<TAB>説明" の行にする（Jev の criteria）。
+# llm-models から指定 backend 群の model->description を "名前<TAB>説明" の行にする（Jev の criteria）。
 delegate_criteria_tsv() {
   local tiers_file="$1"; shift
   local filter
@@ -131,28 +146,35 @@ delegate_rebuild_fallback() {
   mv "$tmp" "$fallback_file"
 }
 
-# 委譲前処理: delegate-models.tsv が不在なら fail-closed（非0）。存在すれば、この agent の
-# fallback が delegate-models.tsv より古い（または不在）ときだけ、フォールバック（候補 backend
-# 分）を Jev で作り直す。delegate-models.tsv の鮮度確認・再生成は別スキルの担当。
+# 委譲前処理: モデル一覧（llm-models）を最新化（失敗しても続行）し、この agent のフォールバックが
+# 24時間以上古い（または不在）のときだけ、フォールバック（候補 backend 分）を Jev で作り直す。
+# 作り直しに失敗したら前回値をそのまま使う。前回値も無ければ非0で終了し、継続方法を案内する。
 delegate_ensure_tiers_and_fallback() {
   local agent="$1"; shift
   local fb_backends=("$@")
-  local state_dir tiers_file fallback_file
-  state_dir="$(delegate_state_dir)" || return 1
-  tiers_file="$state_dir/delegate-models.tsv"
-  fallback_file="$state_dir/fallback/$agent.tsv"
+  local tiers_file="$DELEGATE_LLM_MODELS_FILE"
+  local fallback_file
+  fallback_file="$(delegate_fallback_file "$agent")"
 
-  if [ ! -f "$tiers_file" ]; then
-    printf 'error: delegate requires delegate-models.tsv; run the delegate-models refresh skill before delegating\n' >&2
-    return 1
+  # モデル一覧を最新化する。失敗しても続行し、既存の一覧（あれば）を使う。
+  "$DELEGATE_LLM_MODELS_SCRIPT" >/dev/null 2>&1 || true
+
+  if delegate_is_fresh "$fallback_file"; then
+    return 0
   fi
 
-  if [ "$tiers_file" -nt "$fallback_file" ]; then
-    if ! delegate_rebuild_fallback "$agent" "$tiers_file" "$fallback_file" "${fb_backends[@]}"; then
-      printf 'warning: delegate could not rebuild fallback for %s via Jev (keeping existing)\n' "$agent" >&2
-    fi
+  if delegate_rebuild_fallback "$agent" "$tiers_file" "$fallback_file" "${fb_backends[@]}"; then
+    return 0
   fi
-  return 0
+
+  if [ -f "$fallback_file" ]; then
+    printf 'warning: delegate could not rebuild fallback for %s via Jev (keeping previous)\n' "$agent" >&2
+    return 0
+  fi
+
+  printf 'error: delegate %s cannot determine a fallback model and no previous value exists. Write %s lines (backend<TAB>model, e.g. %s) into %s to continue.\n' \
+    "$agent" "${#fb_backends[@]}" "${fb_backends[0]:-claude}<TAB><model>" "$fallback_file" >&2
+  return 1
 }
 
 # 指示ファイル本文を保存済みの要約モデルで「作業の種類」だけの日本語1文に要約する。
@@ -174,9 +196,8 @@ $(cat "$task_path")")" || return 1
 # backend_filter を渡すとその backend の行だけ、省略すると1行目を返す。
 delegate_fallback_model() {
   local agent="$1" backend_filter="${2:-}"
-  local state_dir fallback_file backend model
-  state_dir="$(delegate_state_dir)" || return 1
-  fallback_file="$state_dir/fallback/$agent.tsv"
+  local fallback_file backend model
+  fallback_file="$(delegate_fallback_file "$agent")"
   [ -f "$fallback_file" ] || return 1
   while IFS=$'\t' read -r backend model; do
     [ -n "$backend" ] || continue
@@ -196,9 +217,8 @@ delegate_fallback_model() {
 delegate_resolve_model() {
   local agent="$1" task_path="$2"; shift 2
   local backends=("$@")
-  local state_dir tiers_file summary criteria out choice conf backend reason="none" fb fb_model
-  state_dir="$(delegate_state_dir)" || return 1
-  tiers_file="$state_dir/delegate-models.tsv"
+  local tiers_file summary criteria out choice conf backend reason="none" fb fb_model
+  tiers_file="$DELEGATE_LLM_MODELS_FILE"
 
   if [ ! -f "$tiers_file" ]; then
     reason="none"
