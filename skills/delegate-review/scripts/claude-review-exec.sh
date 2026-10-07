@@ -4,6 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
 
 WORKTREE="${1:-}"
 INPUTS_DIR="/tmp/delegate-inputs"
@@ -72,4 +73,4 @@ cat >> "$TASK_FILE" <<'EOF'
 差分を解釈するために必要ならファイル全文を読んで構いませんが、差分に含まれない既存コードへの指摘はしないでください。
 EOF
 
-exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
+delegate_review_run "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"

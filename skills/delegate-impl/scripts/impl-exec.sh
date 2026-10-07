@@ -59,11 +59,11 @@ run_once() { # <backend> <model>
   [ -n "$INPUTS_DIR" ] && dirs+=("$INPUTS_DIR")
   dirs+=("${CONTEXT_DIRS[@]+"${CONTEXT_DIRS[@]}"}")
   if [ "$backend" = "codex" ]; then
-    bash "$SCRIPT_DIR/codex-exec.sh" "$WORKTREE" "$TASK_PATH" "$model" "$CONTEXT_PROMPT" \
+    delegate_run_codex "$WORKTREE" "$TASK_PATH" "$model" "$CONTEXT_PROMPT" \
       "${dirs[@]+"${dirs[@]}"}" > "$OUT_FILE" 2> "$ERR_FILE" || rc=$?
   else
-    bash "$SCRIPT_DIR/claude-impl-exec.sh" "$WORKTREE" "$TASK_PATH" "$model" "$CONTEXT_PROMPT" \
-      "${dirs[@]+"${dirs[@]}"}" > "$OUT_FILE" 2> "$ERR_FILE" || rc=$?
+    delegate_run_claude impl "$WORKTREE" "$TASK_PATH" "$model" "$CONTEXT_PROMPT" \
+      "$WORKTREE" "${dirs[@]+"${dirs[@]}"}" > "$OUT_FILE" 2> "$ERR_FILE" || rc=$?
   fi
   cat "$OUT_FILE"
   cat "$ERR_FILE" >&2

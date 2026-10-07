@@ -4,6 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
 
 USAGE='Usage: claude-review-files-exec.sh <worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]'
 
@@ -102,4 +103,4 @@ git 管理外・新規作成のファイルを含む前提のため、差分は�
 EOF
 fi
 
-exec bash "$SCRIPT_DIR/claude-review-agent-exec.sh" "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"
+delegate_review_run "$WORKTREE" "$TASK_NAME" "$INPUTS_DIR"

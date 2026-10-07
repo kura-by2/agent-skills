@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # delegate-impl / delegate-sub / delegate-review 各スキルに同梱する実行基盤。
-# モデル一覧の取得・鮮度管理はリポジトリ直下の scripts/llm-models/ が担い、Jev の choice 判定は
-# scripts/jev-choice.sh を、指示本文の要約は scripts/summarize/script.sh を共有する。
+# モデル一覧の取得はリポジトリ直下の scripts/llm-models/ が担い、その候補 TSV 化は
+# scripts/llm-models/criteria.sh、Jev の choice 判定は scripts/jev-choice.sh、指示本文の要約は
+# scripts/summarize/script.sh、ファイルの鮮度判定は scripts/file-fresh.sh を共有する。
 # フォールバックの保存など、それ以外は各スキル配下だけで完結する。
 #
 # 役割:
 #   - backend 別フォールバック fallback/<backend>.txt（モデル名1行）の生成・保持（backend ごとに24時間）
 #   - 委譲ごとの Jev によるモデル判定（本文は送らず要約のみ）
-#   - codex / claude（agent 指定）での委譲実行
+#   - claude（agent 指定）での委譲実行（review は claude のみ）
 #
 # モデルの候補元は scripts/llm-models/llm-models.json（backend・model・description を持つオブジェクトの
 # 配列。claude は比較表の値を comparison オブジェクトでも持つ）。委譲の前に
@@ -29,6 +30,8 @@ DELEGATE_JEV_CHOICE_SCRIPT="$DELEGATE_SCRIPTS_DIR/jev-choice.sh"
 DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize/script.sh"
 DELEGATE_LLM_MODELS_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/script.sh"
 DELEGATE_LLM_MODELS_FILE="$DELEGATE_SCRIPTS_DIR/llm-models/llm-models.json"
+DELEGATE_CRITERIA_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/criteria.sh"
+DELEGATE_FILE_FRESH_SCRIPT="$DELEGATE_SCRIPTS_DIR/file-fresh.sh"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -44,11 +47,7 @@ delegate_fallback_file() {
 
 # ファイルが鮮度上限より新しければ 0、古い/不在なら非0。
 delegate_is_fresh() {
-  local f="$1" now mtime
-  [ -f "$f" ] || return 1
-  now="$(date +%s)"
-  mtime="$(date -r "$f" +%s 2>/dev/null)" || return 1
-  [ "$((now - mtime))" -lt "$DELEGATE_FALLBACK_MAX_AGE_SECONDS" ]
+  "$DELEGATE_FILE_FRESH_SCRIPT" "$1" "$DELEGATE_FALLBACK_MAX_AGE_SECONDS"
 }
 
 # 本文の伏せ字化（マスキング）を共通スクリプトに委ねる。マスキングの指示文・要約モデルの選択はスクリプト側が担う。
@@ -62,20 +61,6 @@ delegate_summary_ok() {
   local raw="$1"
   [ -n "$raw" ] || return 1
   return 0
-}
-
-# llm-models（JSON）から指定 backend 群の model->description を "名前<TAB>説明" の行にする（Jev の criteria）。
-# 説明は公式の1行説明に、claude の comparison（比較表の値）を「列名: 値」として列順に "; " で連ねた
-# 従来と同等の文字列にする。codex は comparison を持たないので1行説明だけになる。
-delegate_criteria_tsv() {
-  local tiers_file="$1"; shift
-  jq -r '
-    .[]
-    | select(.backend as $b | $ARGS.positional | index($b))
-    | .model + "\t"
-      + ( ( [ .description ] + ( (.comparison // {}) | to_entries | map("\(.key): \(.value)") ) )
-          | map(select(. != null and . != "")) | join("; ") )
-  ' "$tiers_file" --args "$@"
 }
 
 # summary を state に、criteria（"名前<TAB>説明" の行）を候補にして共通スクリプトに問い合わせる。
@@ -111,9 +96,9 @@ delegate_backend_from_model() {
 # この backend のフォールバックを Jev で再生成する。1問判定してモデル名1行を書く。
 # Jev がモデルを返さなければ非0を返し、既存ファイルは上書きしない。
 delegate_rebuild_fallback() {
-  local agent="$1" tiers_file="$2" backend="$3" fallback_file="$4"
+  local agent="$1" backend="$2" fallback_file="$3"
   local criteria choice conf tmp
-  criteria="$(delegate_criteria_tsv "$tiers_file" "$backend")" || criteria=""
+  criteria="$("$DELEGATE_CRITERIA_SCRIPT" "$backend")" || criteria=""
   if [ -z "$criteria" ]; then
     printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
     return 1
@@ -143,7 +128,6 @@ delegate_rebuild_fallback() {
 delegate_ensure_tiers_and_fallback() {
   local agent="$1"; shift
   local fb_backends=("$@")
-  local tiers_file="$DELEGATE_LLM_MODELS_FILE"
   local backend fallback_file available=0
 
   # モデル一覧を最新化する。失敗しても続行し、既存の一覧（あれば）を使う。
@@ -159,7 +143,7 @@ delegate_ensure_tiers_and_fallback() {
       continue
     fi
 
-    if delegate_rebuild_fallback "$agent" "$tiers_file" "$backend" "$fallback_file"; then
+    if delegate_rebuild_fallback "$agent" "$backend" "$fallback_file"; then
       available=1
       continue
     fi
@@ -217,7 +201,7 @@ delegate_resolve_model() {
   elif ! summary="$(delegate_summarize_task "$task_path")"; then
     reason="summary_failed"
   else
-    criteria="$(delegate_criteria_tsv "$tiers_file" "${backends[@]}")" || criteria=""
+    criteria="$("$DELEGATE_CRITERIA_SCRIPT" "${backends[@]}")" || criteria=""
     if [ -z "$criteria" ]; then
       reason="none"
     elif ! delegate_jev_choice "$summary" "$criteria" "この作業にマッチした品質を担保できる、一番コストが低いモデルはどれ？" 0.5; then
@@ -248,46 +232,6 @@ delegate_resolve_model() {
   printf '%s\n' "$fb"
 }
 
-# selected_context_file（1行1パス）から CONTEXT_PROMPT と ADD_DIRS を名前渡しで埋める。
-delegate_build_context() {
-  local selected_file="$1"
-  local -n _ctx="$2"
-  local -n _dirs="$3"
-  _ctx=""
-  local body="" path
-  [ -n "$selected_file" ] && [ -f "$selected_file" ] || return 0
-  while IFS= read -r path || [ -n "$path" ]; do
-    path="$(printf '%s' "$path" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-    [ -n "$path" ] || continue
-    case "$path" in \#*) continue ;; esac
-    if [ ! -f "$path" ] || [[ "${path,,}" != *.md && "${path,,}" != *.markdown ]]; then
-      printf 'warning: selected delegate context is not a Markdown file: %s\n' "$path" >&2
-      continue
-    fi
-    body+=$'\n- '"$path"
-    _dirs+=("$(dirname "$path")")
-  done < "$selected_file"
-  if [ -n "$body" ]; then
-    _ctx=$'\n現在のタスクに適用する追加資料は次のとおりです。これらだけを読んでルールを適用し、最終報告に「適用した追加資料」としてファイルパスを明記してください。'"$body"
-  fi
-}
-
-# codex で委譲を実行する。追加 add-dir 対象は末尾の引数で渡す。
-delegate_run_codex() {
-  local worktree="$1" task_path="$2" model="$3" context_prompt="$4"; shift 4
-  local add_dirs=("$@")
-  local args=(exec -C "$worktree" --model "$model") d
-  for d in "${add_dirs[@]+"${add_dirs[@]}"}"; do
-    args+=(--add-dir "$d")
-  done
-  args+=(--dangerously-bypass-approvals-and-sandbox "${task_path} を読んで対応してください。${context_prompt}")
-  if [ "${DELEGATE_SKIP_EXEC:-}" = "1" ]; then
-    printf 'delegate: skipped codex exec because DELEGATE_SKIP_EXEC=1\n' >&2
-    return 0
-  fi
-  codex "${args[@]}" < /dev/null
-}
-
 # claude で委譲を実行する（agent 指定）。cwd は変えず worktree は --add-dir で渡す。
 delegate_run_claude() {
   local agent="$1" worktree="$2" task_path="$3" model="$4" context_prompt="$5"; shift 5
@@ -303,4 +247,43 @@ delegate_run_claude() {
     return 0
   fi
   CLAUDE_DELEGATE_SESSION=1 claude "${args[@]}" < /dev/null
+}
+
+# 生成済み Review 指示ファイルを review エージェント（claude のみ）へ委譲する。
+# 指示ファイルを生成する2入口（claude-review-exec.sh / claude-review-files-exec.sh）から直接呼ぶ。
+# fallback 用意・モデル解決・add-dir 組み立て・claude 起動まで行う。
+delegate_review_run() {
+  local worktree="$1" task="$2" inputs_dir="$3"
+  local task_path resolved backend model
+
+  delegate_mark_sync_deadline_delegate
+
+  task_path="$task"
+  [ -n "$inputs_dir" ] && task_path="$inputs_dir/$task"
+  if [ ! -f "$task_path" ]; then
+    printf 'error: task file not found: %s\n' "$task_path" >&2
+    return 1
+  fi
+
+  # 委譲前: モデル一覧（llm-models）を最新化し、review フォールバック（claude の1行）が
+  # 24時間以上古い/不在のときだけ作り直す。作り直せず前回値も無ければ fail-closed。
+  if ! delegate_ensure_tiers_and_fallback review claude; then
+    printf 'error: delegate review cannot run because no fallback model is available (fail-closed)\n' >&2
+    return 1
+  fi
+
+  # 主選定: Jev（候補は claude のみ）→ だめなら fallback/claude.txt。
+  resolved="$(delegate_resolve_model review "$task_path" claude)" || true
+  if [ -z "$resolved" ]; then
+    printf 'error: delegate review cannot resolve a model and no fallback exists (fail-closed)\n' >&2
+    return 1
+  fi
+  IFS=$'\t' read -r backend model <<< "$resolved"
+
+  local dirs=()
+  [ -n "$inputs_dir" ] && dirs+=("$inputs_dir")
+
+  printf 'delegate review: model=%s\n' "$model" >&2
+  delegate_run_claude review "$worktree" "$task_path" "$model" "" \
+    "$worktree" "${dirs[@]+"${dirs[@]}"}"
 }

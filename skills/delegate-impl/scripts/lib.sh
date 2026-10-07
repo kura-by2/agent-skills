@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # delegate-impl / delegate-sub / delegate-review 各スキルに同梱する実行基盤。
-# モデル一覧の取得・鮮度管理はリポジトリ直下の scripts/llm-models/ が担い、Jev の choice 判定は
-# scripts/jev-choice.sh を、指示本文の要約は scripts/summarize/script.sh を共有する。
+# モデル一覧の取得はリポジトリ直下の scripts/llm-models/ が担い、その候補 TSV 化は
+# scripts/llm-models/criteria.sh、Jev の choice 判定は scripts/jev-choice.sh、指示本文の要約は
+# scripts/summarize/script.sh、ファイルの鮮度判定は scripts/file-fresh.sh を共有する。
 # フォールバックの保存など、それ以外は各スキル配下だけで完結する。
 #
 # 役割:
@@ -29,6 +30,8 @@ DELEGATE_JEV_CHOICE_SCRIPT="$DELEGATE_SCRIPTS_DIR/jev-choice.sh"
 DELEGATE_SUMMARIZE_SCRIPT="$DELEGATE_SCRIPTS_DIR/summarize/script.sh"
 DELEGATE_LLM_MODELS_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/script.sh"
 DELEGATE_LLM_MODELS_FILE="$DELEGATE_SCRIPTS_DIR/llm-models/llm-models.json"
+DELEGATE_CRITERIA_SCRIPT="$DELEGATE_SCRIPTS_DIR/llm-models/criteria.sh"
+DELEGATE_FILE_FRESH_SCRIPT="$DELEGATE_SCRIPTS_DIR/file-fresh.sh"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -44,11 +47,7 @@ delegate_fallback_file() {
 
 # ファイルが鮮度上限より新しければ 0、古い/不在なら非0。
 delegate_is_fresh() {
-  local f="$1" now mtime
-  [ -f "$f" ] || return 1
-  now="$(date +%s)"
-  mtime="$(date -r "$f" +%s 2>/dev/null)" || return 1
-  [ "$((now - mtime))" -lt "$DELEGATE_FALLBACK_MAX_AGE_SECONDS" ]
+  "$DELEGATE_FILE_FRESH_SCRIPT" "$1" "$DELEGATE_FALLBACK_MAX_AGE_SECONDS"
 }
 
 # 本文の伏せ字化（マスキング）を共通スクリプトに委ねる。マスキングの指示文・要約モデルの選択はスクリプト側が担う。
@@ -62,20 +61,6 @@ delegate_summary_ok() {
   local raw="$1"
   [ -n "$raw" ] || return 1
   return 0
-}
-
-# llm-models（JSON）から指定 backend 群の model->description を "名前<TAB>説明" の行にする（Jev の criteria）。
-# 説明は公式の1行説明に、claude の comparison（比較表の値）を「列名: 値」として列順に "; " で連ねた
-# 従来と同等の文字列にする。codex は comparison を持たないので1行説明だけになる。
-delegate_criteria_tsv() {
-  local tiers_file="$1"; shift
-  jq -r '
-    .[]
-    | select(.backend as $b | $ARGS.positional | index($b))
-    | .model + "\t"
-      + ( ( [ .description ] + ( (.comparison // {}) | to_entries | map("\(.key): \(.value)") ) )
-          | map(select(. != null and . != "")) | join("; ") )
-  ' "$tiers_file" --args "$@"
 }
 
 # summary を state に、criteria（"名前<TAB>説明" の行）を候補にして共通スクリプトに問い合わせる。
@@ -111,9 +96,9 @@ delegate_backend_from_model() {
 # この backend のフォールバックを Jev で再生成する。1問判定してモデル名1行を書く。
 # Jev がモデルを返さなければ非0を返し、既存ファイルは上書きしない。
 delegate_rebuild_fallback() {
-  local agent="$1" tiers_file="$2" backend="$3" fallback_file="$4"
+  local agent="$1" backend="$2" fallback_file="$3"
   local criteria choice conf tmp
-  criteria="$(delegate_criteria_tsv "$tiers_file" "$backend")" || criteria=""
+  criteria="$("$DELEGATE_CRITERIA_SCRIPT" "$backend")" || criteria=""
   if [ -z "$criteria" ]; then
     printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
     return 1
@@ -143,7 +128,6 @@ delegate_rebuild_fallback() {
 delegate_ensure_tiers_and_fallback() {
   local agent="$1"; shift
   local fb_backends=("$@")
-  local tiers_file="$DELEGATE_LLM_MODELS_FILE"
   local backend fallback_file available=0
 
   # モデル一覧を最新化する。失敗しても続行し、既存の一覧（あれば）を使う。
@@ -159,7 +143,7 @@ delegate_ensure_tiers_and_fallback() {
       continue
     fi
 
-    if delegate_rebuild_fallback "$agent" "$tiers_file" "$backend" "$fallback_file"; then
+    if delegate_rebuild_fallback "$agent" "$backend" "$fallback_file"; then
       available=1
       continue
     fi
@@ -217,7 +201,7 @@ delegate_resolve_model() {
   elif ! summary="$(delegate_summarize_task "$task_path")"; then
     reason="summary_failed"
   else
-    criteria="$(delegate_criteria_tsv "$tiers_file" "${backends[@]}")" || criteria=""
+    criteria="$("$DELEGATE_CRITERIA_SCRIPT" "${backends[@]}")" || criteria=""
     if [ -z "$criteria" ]; then
       reason="none"
     elif ! delegate_jev_choice "$summary" "$criteria" "この作業にマッチした品質を担保できる、一番コストが低いモデルはどれ？" 0.5; then

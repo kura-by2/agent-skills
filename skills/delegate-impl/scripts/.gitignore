@@ -1,8 +1,6 @@
 *
 !.gitignore
 !lib.sh
-!claude-impl-exec.sh
-!codex-exec.sh
 !impl-exec.sh
 !write-input.sh
 !fallback/

@@ -26,7 +26,7 @@ review エージェントは書き込み不可。修正・改善の実装はさ�
 
 ## バックエンド
 
-`claude-review-agent-exec.sh` は claude（`claude -p --agent review --model <model>`）を起動する。cwd は変えず、作業対象 worktree・inputs・追加資料ディレクトリを `--add-dir` で渡す。review エージェントは Edit/Write/MultiEdit を禁止する。指示ファイルは `claude-review-exec.sh` / `claude-review-files-exec.sh` が生成する。
+`claude-review-exec.sh` / `claude-review-files-exec.sh` は指示ファイルを生成し、`lib.sh` の委譲処理（モデル解決・claude 起動）を直接呼んで claude（`claude -p --agent review --model <model>`）を起動する。cwd は変えず、作業対象 worktree・inputs ディレクトリを `--add-dir` で渡す。review エージェントは Edit/Write/MultiEdit を禁止する。
 
 ## 実行コマンド
 
@@ -48,7 +48,7 @@ bash {BASE_DIR}/scripts/claude-review-exec.sh <worktree> <goal1> <diff1> [<goal2
 bash {BASE_DIR}/scripts/claude-review-files-exec.sh <worktree> <goal_file> <files> "$INPUTS_DIR" [--range <diff_range>]
 ```
 
-`claude-review-exec.sh` は同一 worktree の `<goal_file> <diff_range>` 対を1組以上受け取り、対ごとに review エージェント用の指示ファイルを生成して `claude-review-agent-exec.sh` に渡す。inputs ディレクトリは末尾の `--inputs-dir <dir>` で指定する。従来の単一ペアに限り、第4引数の inputs ディレクトリ指定と `diff_range` 省略時の `HEAD` も使える。`HEAD` は追跡済みファイルの未コミット変更のみが対象で、未追跡ファイルは差分に出ないため `claude-review-files-exec.sh` を使う。コミット済み変更は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
+`claude-review-exec.sh` は同一 worktree の `<goal_file> <diff_range>` 対を1組以上受け取り、対ごとに review エージェント用の指示ファイルを生成して委譲する。inputs ディレクトリは末尾の `--inputs-dir <dir>` で指定する。従来の単一ペアに限り、第4引数の inputs ディレクトリ指定と `diff_range` 省略時の `HEAD` も使える。`HEAD` は追跡済みファイルの未コミット変更のみが対象で、未追跡ファイルは差分に出ないため `claude-review-files-exec.sh` を使う。コミット済み変更は `main..HEAD` や `HEAD~3..HEAD` のように明示する。
 
 `claude-review-files-exec.sh` は `<worktree> <goal_file> <files> [inputs_dir] [--range <diff_range>]` を受け取る。`--range` を指定すると git 管理下のファイルはその diff 範囲だけがレビュー対象になり、ファイル全文は差分を解釈する文脈としてのみ読ませる。`--range` を省略するとファイル全文がレビュー対象になる。git 管理外・新規作成のファイルは `--range` の有無にかかわらず全文が対象。
 
