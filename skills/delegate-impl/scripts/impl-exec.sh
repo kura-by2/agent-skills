@@ -2,7 +2,7 @@
 # Usage: impl-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]
 # 実装委譲（impl エージェント・codex / claude、書き込み・コミット許可／検証コマンド禁止）。
 # 委譲ごとに Jev でモデルを選び、同一 backend で2回連続して非0終了したら
-# fallback/impl.tsv のもう一方の backend の行のモデルで同じ worktree・同じ指示のまま再実行する。
+# fallback/<backend>.txt のもう一方の backend のモデルで同じ worktree・同じ指示のまま再実行する。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,14 +27,14 @@ if [ ! -f "$TASK_PATH" ]; then
   exit 1
 fi
 
-# 委譲前: モデル一覧（llm-models）を最新化し、impl フォールバック（codex・claude の2行）が
-# 24時間以上古い/不在のときだけ作り直す。作り直せず前回値も無ければ fail-closed。
+# 委譲前: モデル一覧（llm-models）を最新化し、impl フォールバック（codex.txt・claude.txt）を backend ごとに、
+# 24時間以上古い/不在のときだけ作り直す。どの backend にも値が無ければ fail-closed。
 if ! delegate_ensure_tiers_and_fallback impl codex claude; then
   printf 'error: delegate impl cannot run because no fallback model is available (fail-closed)\n' >&2
   exit 1
 fi
 
-# 主選定: Jev（候補は codex と claude 両方）→ だめなら fallback/impl.tsv の1行目。
+# 主選定: Jev（候補は codex と claude 両方）→ だめなら fallback/<backend>.txt（候補 backend の順で最初の値）。
 RESOLVED="$(delegate_resolve_model impl "$TASK_PATH" codex claude)" || true
 if [ -z "$RESOLVED" ]; then
   printf 'error: delegate impl cannot resolve a model and no fallback exists (fail-closed)\n' >&2
@@ -82,7 +82,7 @@ if [ "$RC" -ne 0 ] && ! is_permission; then
   printf 'delegate impl: retry (same model) backend=%s model=%s\n' "$BACKEND" "$MODEL" >&2
   run_once "$BACKEND" "$MODEL"
   if [ "$RC" -ne 0 ] && ! is_permission; then
-    # 2回連続失敗 → fallback/impl.tsv のもう一方の backend で再実行。
+    # 2回連続失敗 → fallback/<backend>.txt のもう一方の backend で再実行。
     if [ "$BACKEND" = "codex" ]; then OTHER="claude"; else OTHER="codex"; fi
     if OTHER_ROW="$(delegate_fallback_model impl "$OTHER")"; then
       IFS=$'\t' read -r OBACKEND OMODEL <<< "$OTHER_ROW"

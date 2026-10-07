@@ -33,7 +33,7 @@ if ! delegate_ensure_tiers_and_fallback review claude; then
   exit 1
 fi
 
-# 主選定: Jev（候補は claude のみ）→ だめなら fallback/review.tsv。
+# 主選定: Jev（候補は claude のみ）→ だめなら fallback/claude.txt。
 RESOLVED="$(delegate_resolve_model review "$TASK_PATH" claude)" || true
 if [ -z "$RESOLVED" ]; then
   printf 'error: delegate review cannot resolve a model and no fallback exists (fail-closed)\n' >&2

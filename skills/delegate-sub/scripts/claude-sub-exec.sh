@@ -32,7 +32,7 @@ if ! delegate_ensure_tiers_and_fallback sub claude; then
   exit 1
 fi
 
-# 主選定: Jev（候補は claude のみ）→ だめなら fallback/sub.tsv。
+# 主選定: Jev（候補は claude のみ）→ だめなら fallback/claude.txt。
 RESOLVED="$(delegate_resolve_model sub "$TASK_PATH" claude)" || true
 if [ -z "$RESOLVED" ]; then
   printf 'error: delegate sub cannot resolve a model and no fallback exists (fail-closed)\n' >&2

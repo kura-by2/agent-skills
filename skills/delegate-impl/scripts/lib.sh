@@ -5,7 +5,7 @@
 # フォールバックの保存など、それ以外は各スキル配下だけで完結する。
 #
 # 役割:
-#   - エージェント別フォールバック fallback/<agent>.tsv（backend<TAB>model）の生成・保持（24時間）
+#   - backend 別フォールバック fallback/<backend>.txt（モデル名1行）の生成・保持（backend ごとに24時間）
 #   - 委譲ごとの Jev によるモデル判定（本文は送らず要約のみ）
 #   - codex / claude（agent 指定）での委譲実行
 #
@@ -37,9 +37,9 @@ delegate_mark_sync_deadline_delegate() {
   : > "/tmp/claude-sync-deadline/$session.delegate" 2>/dev/null || true
 }
 
-# この agent のフォールバックファイル（自スキル配下・git 追跡外）。
+# この backend のフォールバックファイル（自スキル配下・git 追跡外、中身はモデル名1行）。
 delegate_fallback_file() {
-  printf '%s/fallback/%s.tsv\n' "$DELEGATE_LIB_DIR" "$1"
+  printf '%s/fallback/%s.txt\n' "$DELEGATE_LIB_DIR" "$1"
 }
 
 # ファイルが鮮度上限より新しければ 0、古い/不在なら非0。
@@ -108,71 +108,74 @@ delegate_backend_from_model() {
   esac
 }
 
-# agent 用フォールバックを Jev で再生成する。backend ごとに1問判定して backend<TAB>model を書く。
-# Jev が1行も返さなければ非0を返し、既存ファイルは上書きしない。
+# この backend のフォールバックを Jev で再生成する。1問判定してモデル名1行を書く。
+# Jev がモデルを返さなければ非0を返し、既存ファイルは上書きしない。
 delegate_rebuild_fallback() {
-  local agent="$1" tiers_file="$2" fallback_file="$3"; shift 3
-  local backends=("$@")
-  local tmp backend criteria out choice conf wrote=0
-  tmp="$(mktemp)"
-  for backend in "${backends[@]}"; do
-    criteria="$(delegate_criteria_tsv "$tiers_file" "$backend")" || criteria=""
-    if [ -z "$criteria" ]; then
-      printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
-      continue
-    fi
-    if ! delegate_jev_choice "作業全般に標準的に使うモデルを1つ選ぶ。" "$criteria" \
-      "この backend の既定として最も適したモデルを選ぶ。"; then
-      printf 'delegate %s fallback-gen: backend=%s source=none reason=%s\n' \
-        "$agent" "$backend" "${DELEGATE_JEV_LAST_ERROR:-none}" >&2
-      continue
-    fi
-    IFS=$'\t' read -r choice conf <<< "$DELEGATE_JEV_LAST_OUTPUT"
-    if [ -z "$choice" ]; then
-      printf 'delegate %s fallback-gen: backend=%s source=none reason=http_error\n' "$agent" "$backend" >&2
-      continue
-    fi
-    printf 'delegate %s fallback-gen: backend=%s model=%s source=jev confidence=%s\n' \
-      "$agent" "$backend" "$choice" "$conf" >&2
-    printf '%s\t%s\n' "$backend" "$choice" >> "$tmp"
-    wrote=1
-  done
-  if [ "$wrote" -eq 0 ]; then
-    rm -f "$tmp"
+  local agent="$1" tiers_file="$2" backend="$3" fallback_file="$4"
+  local criteria choice conf tmp
+  criteria="$(delegate_criteria_tsv "$tiers_file" "$backend")" || criteria=""
+  if [ -z "$criteria" ]; then
+    printf 'delegate %s fallback-gen: backend=%s source=none reason=none\n' "$agent" "$backend" >&2
     return 1
   fi
+  if ! delegate_jev_choice "作業全般に標準的に使うモデルを1つ選ぶ。" "$criteria" \
+    "この backend の既定として最も適したモデルを選ぶ。"; then
+    printf 'delegate %s fallback-gen: backend=%s source=none reason=%s\n' \
+      "$agent" "$backend" "${DELEGATE_JEV_LAST_ERROR:-none}" >&2
+    return 1
+  fi
+  IFS=$'\t' read -r choice conf <<< "$DELEGATE_JEV_LAST_OUTPUT"
+  if [ -z "$choice" ]; then
+    printf 'delegate %s fallback-gen: backend=%s source=none reason=http_error\n' "$agent" "$backend" >&2
+    return 1
+  fi
+  printf 'delegate %s fallback-gen: backend=%s model=%s source=jev confidence=%s\n' \
+    "$agent" "$backend" "$choice" "$conf" >&2
+  tmp="$(mktemp)"
+  printf '%s\n' "$choice" > "$tmp"
   mv "$tmp" "$fallback_file"
 }
 
-# 委譲前処理: モデル一覧（llm-models）を最新化（失敗しても続行）し、この agent のフォールバックが
-# 24時間以上古い（または不在）のときだけ、フォールバック（候補 backend 分）を Jev で作り直す。
-# 作り直しに失敗したら前回値をそのまま使う。前回値も無ければ非0で終了し、継続方法を案内する。
+# 委譲前処理: モデル一覧（llm-models）を最新化（失敗しても続行）し、候補 backend ごとに、その backend の
+# フォールバックが 24時間以上古い（または不在）のときだけ Jev で作り直す。鮮度判定・作り直し・失敗時の
+# 前回値維持は backend ごとに完結する。作り直しに失敗した backend は前回値をそのまま使う。
+# どの backend にも値が無いときだけ非0で終了し、継続方法を案内する。
 delegate_ensure_tiers_and_fallback() {
   local agent="$1"; shift
   local fb_backends=("$@")
   local tiers_file="$DELEGATE_LLM_MODELS_FILE"
-  local fallback_file
-  fallback_file="$(delegate_fallback_file "$agent")"
+  local backend fallback_file available=0
 
   # モデル一覧を最新化する。失敗しても続行し、既存の一覧（あれば）を使う。
   "$DELEGATE_LLM_MODELS_SCRIPT" >/dev/null 2>&1 || true
 
-  if delegate_is_fresh "$fallback_file"; then
-    return 0
-  fi
+  mkdir -p "$DELEGATE_LIB_DIR/fallback" 2>/dev/null || true
 
-  if delegate_rebuild_fallback "$agent" "$tiers_file" "$fallback_file" "${fb_backends[@]}"; then
-    return 0
-  fi
+  for backend in "${fb_backends[@]}"; do
+    fallback_file="$(delegate_fallback_file "$backend")"
 
-  if [ -f "$fallback_file" ]; then
-    printf 'warning: delegate could not rebuild fallback for %s via Jev (keeping previous)\n' "$agent" >&2
-    return 0
-  fi
+    if delegate_is_fresh "$fallback_file"; then
+      available=1
+      continue
+    fi
 
-  printf 'error: delegate %s cannot determine a fallback model and no previous value exists. Write %s lines (backend<TAB>model, e.g. %s) into %s to continue.\n' \
-    "$agent" "${#fb_backends[@]}" "${fb_backends[0]:-claude}<TAB><model>" "$fallback_file" >&2
-  return 1
+    if delegate_rebuild_fallback "$agent" "$tiers_file" "$backend" "$fallback_file"; then
+      available=1
+      continue
+    fi
+
+    if [ -f "$fallback_file" ]; then
+      printf 'warning: delegate could not rebuild fallback for %s backend %s via Jev (keeping previous)\n' \
+        "$agent" "$backend" >&2
+      available=1
+      continue
+    fi
+
+    printf 'error: delegate %s backend %s cannot determine a fallback model and no previous value exists. Write a model name (1 line, e.g. <model>) into %s to continue.\n' \
+      "$agent" "$backend" "$fallback_file" >&2
+  done
+
+  [ "$available" -eq 1 ]
 }
 
 # 指示ファイル本文を保存済みの要約モデルでマスキングする。構成・作業内容・範囲・条件は残し、
@@ -187,24 +190,16 @@ delegate_summarize_task() {
   printf '%s\n' "$raw"
 }
 
-# fallback/<agent>.tsv から backend<TAB>model を1行取り出す。
-# backend_filter を渡すとその backend の行だけ、省略すると1行目を返す。
+# この backend のフォールバックファイル（モデル名1行）を読み、"backend<TAB>model" を返す。
+# ファイルが無い／空のときは非0。
 delegate_fallback_model() {
-  local agent="$1" backend_filter="${2:-}"
-  local fallback_file backend model
-  fallback_file="$(delegate_fallback_file "$agent")"
+  local agent="$1" backend="$2"
+  local fallback_file model
+  fallback_file="$(delegate_fallback_file "$backend")"
   [ -f "$fallback_file" ] || return 1
-  while IFS=$'\t' read -r backend model; do
-    [ -n "$backend" ] || continue
-    case "$backend" in \#*) continue ;; esac
-    if [ -n "$backend_filter" ] && [ "$backend" != "$backend_filter" ]; then
-      continue
-    fi
-    [ -n "$model" ] || continue
-    printf '%s\t%s\n' "$backend" "$model"
-    return 0
-  done < "$fallback_file"
-  return 1
+  IFS= read -r model < "$fallback_file" || model=""
+  [ -n "$model" ] || return 1
+  printf '%s\t%s\n' "$backend" "$model"
 }
 
 # agent 用に使用モデルを決める。標準出力 "backend<TAB>model"。
@@ -239,7 +234,14 @@ delegate_resolve_model() {
     fi
   fi
 
-  fb="$(delegate_fallback_model "$agent")" || fb=""
+  # fallback は候補 backend の順に最初に値があるものを使う。
+  fb=""
+  for backend in "${backends[@]}"; do
+    if fb="$(delegate_fallback_model "$agent" "$backend")"; then
+      break
+    fi
+    fb=""
+  done
   fb_model="$(printf '%s' "$fb" | cut -f2)"
   printf 'delegate %s: model=%s source=fallback reason=%s\n' "$agent" "${fb_model:-none}" "$reason" >&2
   [ -n "$fb" ] || return 1
