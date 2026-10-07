@@ -123,7 +123,7 @@ delegate_rebuild_fallback() {
     return 1
   fi
   if ! delegate_jev_choice "$state" "$criteria" \
-    "このエージェントの役割の既定として最も適したモデルを選ぶ。"; then
+    "この backend の既定として最も適したモデルを選ぶ。"; then
     printf 'delegate %s fallback-gen: backend=%s source=none reason=%s\n' \
       "$agent" "$backend" "${DELEGATE_JEV_LAST_ERROR:-none}" >&2
     return 1
