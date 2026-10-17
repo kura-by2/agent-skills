@@ -73,7 +73,7 @@ STDERR_FILE="$(mktemp)"
 trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' EXIT
 RC=0
 
-if ! codex exec -C "$WORKTREE" \
+if ! CODEX_COCKPIT_ROLE=impl codex exec -C "$WORKTREE" \
   --model "$MODEL" \
   "${ADD_DIR_ARGS[@]}" \
   --dangerously-bypass-approvals-and-sandbox \
