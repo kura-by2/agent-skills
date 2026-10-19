@@ -23,21 +23,20 @@ delegate_mark_sync_deadline_delegate() {
 
 delegate_claude_exec() (
   local AGENT="${1:-}"
-  local WORKTREE="${2:-}"
-  local TASK="${3:-}"
-  local INPUTS_DIR="${4:-}"
-  local SELECTED_CONTEXT_FILE="${5:-}"
+  local MODEL="${2:-}"
+  local WORKTREE="${3:-}"
+  local TASK="${4:-}"
+  local INPUTS_DIR="${5:-}"
+  local SELECTED_CONTEXT_FILE="${6:-}"
 
-  if [ -z "$AGENT" ] || [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
-    printf 'error: delegate claude exec requires <agent> <worktree> <task_file>\n' >&2
+  if [ -z "$AGENT" ] || [ -z "$MODEL" ] || [ -z "$WORKTREE" ] || [ -z "$TASK" ]; then
+    printf 'error: delegate claude exec requires <agent> <model> <worktree> <task_file>\n' >&2
     return 1
   fi
 
   delegate_mark_sync_deadline_delegate
 
   delegate_ensure_model_cache claude || return $?
-  local MODEL
-  MODEL="$(delegate_model_for_agent "$AGENT")" || return $?
 
   local TASK_PATH="$TASK"
   if [ -n "$INPUTS_DIR" ]; then

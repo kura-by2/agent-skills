@@ -20,7 +20,7 @@ delegate_exec_for_task_type() {
       delegate_codex_exec "$CODEX_PROFILE" "$MODEL" "$@"
       ;;
     claude)
-      delegate_claude_exec "$AGENT" "$@"
+      delegate_claude_exec "$AGENT" "$MODEL" "$@"
       ;;
   esac
 }
