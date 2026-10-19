@@ -20,11 +20,11 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
         p=binary/cli; p.write_text(shim); p.chmod(0o755)
     env=dict(os.environ,PATH=str(binary)+':'+os.environ['PATH'], CODEX_HOME=str(home), DELEGATE_ROUTING_FILE=str(routing),DELEGATE_MODEL_CACHE_DIR=str(cache),DELEGATE_MODEL_TIERS_FILE=str(tiers),TEST_LOG=str(logs/'calls'),TEST_WORK=str(work),TMPDIR=str(root))
     entrypoints=[('codex-exec.sh','impl','implementation'),('claude-impl-exec.sh','impl','implementation'),('claude-sub-exec.sh','sub','other'),('claude-review-agent-exec.sh','review','review')]
-    claude_agents={'implementation':'impl','other':'impl','review':'review'}
+    claude_agents={'implementation':'impl','other':'sub','review':'review'}
     claude_models={'implementation':'claude-impl-test','other':'claude-other-test','review':'claude-review-test'}
     count=0
     for backend in ['codex','claude']:
-        routing.write_text(''.join(f'{task}\t{backend}\t{role if backend=="claude" else ""}\t{"gpt-5.6-sol" if backend=="codex" else claude_models[task]}\n' for task,role in [('implementation','impl'),('other','impl'),('review','review')]))
+        routing.write_text(''.join(f'{task}\t{backend}\t{role if backend=="claude" else ""}\t{"gpt-5.6-sol" if backend=="codex" else claude_models[task]}\n' for task,role in [('implementation','impl'),('other','sub'),('review','review')]))
         for entry,role,task_type in entrypoints:
             for rc in [0,7]:
                 result=subprocess.run(['bash',str(scripts/entry),str(work),'task.md',str(inputs)],env=dict(env,TEST_RC=str(rc)),capture_output=True,text=True)
@@ -44,6 +44,13 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
                 assert ('DELEGATE_FALLBACK_SUGGEST' in result.stderr)==(rc!=0),result.stderr
                 assert not list(root.glob('tmp.*')),list(root.glob('tmp.*'))
                 count+=1
+    for entry,task_type,agent,expected_agent in [('claude-impl-exec.sh','implementation','sub','impl'),('claude-sub-exec.sh','other','impl','sub'),('claude-review-agent-exec.sh','review','impl','review')]:
+        routing.write_text(f'{task_type}\tclaude\t{agent}\t{claude_models[task_type]}\n')
+        before=(logs/'calls').read_text()
+        result=subprocess.run(['bash',str(scripts/entry),str(work),'task.md',str(inputs)],env=env,capture_output=True,text=True)
+        assert result.returncode==1 and f'must specify agent {expected_agent}' in result.stderr,result
+        assert (logs/'calls').read_text()==before
+        count+=1
     routing.write_text('implementation\tcodex\t\tgpt-5.6-sol\n')
     (home/'impl.config.toml').unlink()
     before=(logs/'calls').read_text()
@@ -51,4 +58,4 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
     assert result.returncode==1 and 'Codex profile not found' in result.stderr,result
     assert (logs/'calls').read_text()==before
     count+=1
-    print(f'PASS: {count} cases (both backends, 4 entrypoints, exit 0/7, profile/sandbox/model, cleanup, missing profile fail-closed)')
+    print(f'PASS: {count} cases (both backends, 4 entrypoints, exit 0/7, role/profile/sandbox/model, cleanup, invalid Claude agent and missing profile fail-closed)')

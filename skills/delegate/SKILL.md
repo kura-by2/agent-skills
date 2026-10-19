@@ -35,7 +35,7 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 
 利用可能モデル一覧は `$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv` に持つ。これは `backend<TAB>model<TAB>performance` のローカル固有の設定表（`.gitignore` で追跡しない）で、performance はフォールバック候補の並べ替えに使う。
 
-委譲先の `task_type` と backend / agent / 使用モデルの対応は `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` のローカル固有の設定表（`.gitignore` で追跡しない）で、実行スクリプトはこの表から具体モデル名を直接読む。implementation の agent は、backend が `claude` のとき `impl`、backend が `codex` のとき空欄にする（codex は agent を使わない）。
+委譲先の `task_type` と backend / agent / 使用モデルの対応は `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` に持つ。これは `task_type<TAB>backend<TAB>agent<TAB>model` のローカル固有の設定表（`.gitignore` で追跡しない）で、実行スクリプトはこの表から具体モデル名を直接読む。backend が `claude` のとき agent は implementation が `impl`、other が `sub`、review が `review` に一致させる。異なる agent の設定は権限が用途と一致しないため、CLI を起動せずエラーにする。backend が `codex` のとき agent は空欄にする（codex は agent を使わない）。
 
 起動スクリプトは作業種別で選ぶ。
 

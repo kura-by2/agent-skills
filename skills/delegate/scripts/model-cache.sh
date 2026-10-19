@@ -183,7 +183,7 @@ delegate_model_for_route() {
 
 delegate_route_for_task_type() {
   local requested_task_type="$1"
-  local routing_file task_type backend agent model line
+  local routing_file task_type backend agent model line expected_agent
 
   routing_file="$(delegate_routing_file)"
 
@@ -216,6 +216,19 @@ delegate_route_for_task_type() {
       claude)
         if [ -z "$agent" ]; then
           printf 'error: claude delegate routing row must specify an agent for task_type %s\n' "$requested_task_type" >&2
+          return 1
+        fi
+        case "$requested_task_type" in
+          implementation) expected_agent="impl" ;;
+          other) expected_agent="sub" ;;
+          review) expected_agent="review" ;;
+          *)
+            printf 'error: unsupported delegate task_type for claude backend: %s\n' "$requested_task_type" >&2
+            return 1
+            ;;
+        esac
+        if [ "$agent" != "$expected_agent" ]; then
+          printf 'error: claude delegate routing row for task_type %s must specify agent %s\n' "$requested_task_type" "$expected_agent" >&2
           return 1
         fi
         ;;
