@@ -181,6 +181,58 @@ delegate_model_for_route() {
   return 1
 }
 
+delegate_route_for_task_type() {
+  local requested_task_type="$1"
+  local routing_file task_type backend agent model line
+
+  routing_file="$(delegate_routing_file)"
+
+  if [ ! -f "$routing_file" ]; then
+    printf 'error: delegate routing table is missing: %s\n' "$routing_file" >&2
+    return 1
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    IFS=$'\037' read -r task_type backend agent model _ <<< "${line//$'\t'/$'\037'}"
+    [ -n "$task_type" ] || continue
+    case "$task_type" in
+      \#*)
+        continue
+        ;;
+    esac
+    [ "$task_type" = "$requested_task_type" ] || continue
+
+    if [ -z "$backend" ] || [ -z "$model" ]; then
+      printf 'error: delegate routing row is incomplete for task_type %s\n' "$requested_task_type" >&2
+      return 1
+    fi
+    case "$backend" in
+      codex)
+        if [ -n "$agent" ]; then
+          printf 'error: codex delegate routing row must not specify an agent for task_type %s\n' "$requested_task_type" >&2
+          return 1
+        fi
+        ;;
+      claude)
+        if [ -z "$agent" ]; then
+          printf 'error: claude delegate routing row must specify an agent for task_type %s\n' "$requested_task_type" >&2
+          return 1
+        fi
+        ;;
+      *)
+        printf 'error: unsupported delegate backend for task_type %s: %s\n' "$requested_task_type" "$backend" >&2
+        return 1
+        ;;
+    esac
+
+    printf '%s\t%s\t%s\n' "$backend" "$agent" "$model"
+    return 0
+  done < "$routing_file"
+
+  printf 'error: no delegate routing row for task_type %s\n' "$requested_task_type" >&2
+  return 1
+}
+
 delegate_model_for_task_type() {
   local task_type="$1"
 

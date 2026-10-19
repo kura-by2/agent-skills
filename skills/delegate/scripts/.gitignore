@@ -1,6 +1,8 @@
 *
 !.gitignore
 !claude-common.sh
+!codex-common.sh
+!delegate-common.sh
 !claude-sub-exec.sh
 !claude-impl-exec.sh
 !claude-review-agent-exec.sh

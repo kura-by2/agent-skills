@@ -21,7 +21,7 @@ delegate_mark_sync_deadline_delegate() {
   : > "/tmp/claude-sync-deadline/$session.delegate" 2>/dev/null || true
 }
 
-delegate_claude_exec() {
+delegate_claude_exec() (
   local AGENT="${1:-}"
   local WORKTREE="${2:-}"
   local TASK="${3:-}"
@@ -35,9 +35,9 @@ delegate_claude_exec() {
 
   delegate_mark_sync_deadline_delegate
 
-  delegate_ensure_model_cache claude
+  delegate_ensure_model_cache claude || return $?
   local MODEL
-  MODEL="$(delegate_model_for_agent "$AGENT")"
+  MODEL="$(delegate_model_for_agent "$AGENT")" || return $?
 
   local TASK_PATH="$TASK"
   if [ -n "$INPUTS_DIR" ]; then
@@ -84,17 +84,19 @@ delegate_claude_exec() {
   OUTPUT_FILE="$(mktemp)"
   STDOUT_FILE="$(mktemp)"
   STDERR_FILE="$(mktemp)"
-  trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' RETURN
+  trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' EXIT
   local RC=0
   local PROMPT="作業対象のリポジトリは ${WORKTREE} です。${TASK_PATH} を読んで対応してください。ファイルの作成・編集・削除は ${WORKTREE}（および渡された inputs）内に限定すること。読み取り専用の参照やコマンド実行は、システム情報など ${WORKTREE} 外を対象にしても禁止しない。自分の権限範囲外の作業を求められたら固定文言 DELEGATE_PERMISSION_OUT_OF_SCOPE だけを出して終了すること。${CONTEXT_PROMPT}"
 
-  if ! CLAUDE_DELEGATE_SESSION=1 claude -p "$PROMPT" \
+  if CLAUDE_DELEGATE_SESSION=1 claude -p "$PROMPT" \
     --agent "$AGENT" \
     --model "$MODEL" \
     "${ADD_DIR_ARGS[@]}" \
     --dangerously-skip-permissions \
     > "$STDOUT_FILE" 2> "$STDERR_FILE" < /dev/null; then
-    RC="${PIPESTATUS[0]}"
+    :
+  else
+    RC=$?
   fi
 
   cat "$STDOUT_FILE"
@@ -102,4 +104,4 @@ delegate_claude_exec() {
   cat "$STDOUT_FILE" "$STDERR_FILE" > "$OUTPUT_FILE"
   delegate_maybe_emit_fallback_suggest "$MODEL" "$OUTPUT_FILE" "$RC"
   return "$RC"
-}
+)

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/model-cache.sh"
+source "$SCRIPT_DIR/delegate-common.sh"
 
 delegate_mark_sync_deadline_delegate() {
   local session="${CLAUDE_CODE_SESSION_ID:-}"
@@ -24,68 +24,11 @@ fi
 
 delegate_mark_sync_deadline_delegate
 
-delegate_ensure_model_cache codex
-MODEL="$(delegate_model_for_task_type implementation)"
-
-TASK_PATH="$TASK"
-if [ -n "$INPUTS_DIR" ]; then
-  TASK_PATH="$INPUTS_DIR/$TASK"
-fi
-
-if [ ! -f "$TASK_PATH" ]; then
-  printf 'error: task file not found: %s\n' "$TASK_PATH" >&2
-  exit 1
-fi
-
-ADD_DIR_ARGS=()
-if [ -n "$INPUTS_DIR" ]; then
-  ADD_DIR_ARGS+=(--add-dir "$INPUTS_DIR")
-fi
-
-CONTEXT_PROMPT=""
-if [ -n "$SELECTED_CONTEXT_FILE" ] && [ -f "$SELECTED_CONTEXT_FILE" ]; then
-  while IFS= read -r context_path || [ -n "$context_path" ]; do
-    context_path="$(printf '%s' "$context_path" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-    if [ -z "$context_path" ] || [[ "$context_path" == \#* ]]; then
-      continue
-    fi
-    if [ ! -f "$context_path" ] || [[ "${context_path,,}" != *.md && "${context_path,,}" != *.markdown ]]; then
-      printf 'warning: selected delegate context is not a Markdown file: %s\n' "$context_path" >&2
-      continue
-    fi
-    CONTEXT_PROMPT+=$'\n- '"$context_path"
-    ADD_DIR_ARGS+=(--add-dir "$(dirname "$context_path")")
-  done < "$SELECTED_CONTEXT_FILE"
-fi
-
-if [ -n "$CONTEXT_PROMPT" ]; then
-  CONTEXT_PROMPT=$'\n現在のタスクに適用する追加資料は次のとおりです。これらだけを読んでルールを適用し、最終報告に「適用した追加資料」としてファイルパスを明記してください。'"$CONTEXT_PROMPT"
-fi
-
-if [ "${DELEGATE_SKIP_EXEC:-}" = "1" ]; then
-  printf 'delegate: skipped codex exec because DELEGATE_SKIP_EXEC=1\n' >&2
-  exit 0
-fi
-
-OUTPUT_FILE="$(mktemp)"
 STDOUT_FILE="$(mktemp)"
-STDERR_FILE="$(mktemp)"
-trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' EXIT
+trap 'rm -f "$STDOUT_FILE"' EXIT
 RC=0
-
-if ! CODEX_HOME=/mnt/playground/cockpit/.codex codex exec --profile impl --dangerously-bypass-hook-trust -C "$WORKTREE" \
-  --model "$MODEL" \
-  "${ADD_DIR_ARGS[@]}" \
-  --dangerously-bypass-approvals-and-sandbox \
-  "${TASK_PATH} を読んで対応してください。${CONTEXT_PROMPT}" \
-  > "$STDOUT_FILE" 2> "$STDERR_FILE" < /dev/null; then
-  RC="${PIPESTATUS[0]}"
-fi
-
+delegate_exec_for_task_type implementation impl "$WORKTREE" "$TASK" "$INPUTS_DIR" "$SELECTED_CONTEXT_FILE" > "$STDOUT_FILE" || RC=$?
 cat "$STDOUT_FILE"
-cat "$STDERR_FILE" >&2
-cat "$STDOUT_FILE" "$STDERR_FILE" > "$OUTPUT_FILE"
-delegate_maybe_emit_fallback_suggest "$MODEL" "$OUTPUT_FILE" "$RC"
 
 REVIEW_FILES="$(awk -F '\t' '$1 == "DELEGATE_CHANGED_FILE" && $2 ~ /^\// && NF == 2 { print $2 }' "$STDOUT_FILE" | sort -u)"
 if [ -n "$REVIEW_FILES" ]; then
