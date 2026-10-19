@@ -14,13 +14,6 @@
 DELEGATE_CLAUDE_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DELEGATE_CLAUDE_COMMON_DIR/model-cache.sh"
 
-delegate_mark_sync_deadline_delegate() {
-  local session="${CLAUDE_CODE_SESSION_ID:-}"
-  [ -n "$session" ] || return 0
-  mkdir -p /tmp/claude-sync-deadline 2>/dev/null || return 0
-  : > "/tmp/claude-sync-deadline/$session.delegate" 2>/dev/null || true
-}
-
 delegate_claude_exec() (
   local AGENT="${1:-}"
   local MODEL="${2:-}"
@@ -33,8 +26,6 @@ delegate_claude_exec() (
     printf 'error: delegate claude exec requires <agent> <model> <worktree> <task_file>\n' >&2
     return 1
   fi
-
-  delegate_mark_sync_deadline_delegate
 
   delegate_ensure_model_cache claude || return $?
 
