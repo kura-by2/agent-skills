@@ -40,20 +40,3 @@ delegate_exec_for_backend() {
       ;;
   esac
 }
-
-# Compatibility entrypoint for the existing codex-exec.sh driver.
-delegate_exec_for_task_type() {
-  local task_type="${1:-}"
-  local role="${2:-}"
-  shift 2
-
-  delegate_mark_sync_deadline_delegate
-
-  local route backend agent model
-  route="$(delegate_route_for_task_type "$task_type")" || return 1
-  IFS=$'\037' read -r backend agent model <<< "${route//$'\t'/$'\037'}"
-  case "$backend" in
-    codex) delegate_codex_exec "$role" "$model" "$@" ;;
-    claude) delegate_claude_exec "$agent" "$model" "$@" ;;
-  esac
-}

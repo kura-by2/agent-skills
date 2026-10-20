@@ -26,7 +26,7 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
         p=binary/cli; p.write_text(shim); p.chmod(0o755)
     env=dict(os.environ,PATH=str(binary)+':'+os.environ['PATH'], CODEX_HOME=str(home), DELEGATE_ROUTING_FILE=str(routing),DELEGATE_MODEL_CACHE_DIR=str(cache),DELEGATE_MODEL_TIERS_FILE=str(tiers),TEST_LOG=str(logs/'calls'),TEST_WORK=str(work),TMPDIR=str(root))
     env.pop('CLAUDE_CODE_SESSION_ID',None); env.pop('CODEX_THREAD_ID',None)
-    entrypoints=[('codex-impl-exec.sh','codex','impl','implementation'),('codex-exec.sh','codex','impl','implementation'),('codex-sub-exec.sh','codex','sub','other'),('codex-review-agent-exec.sh','codex','review','review'),('claude-impl-exec.sh','claude','impl','implementation'),('claude-sub-exec.sh','claude','sub','other'),('claude-review-agent-exec.sh','claude','review','review')]
+    entrypoints=[('codex-impl-exec.sh','codex','impl','implementation'),('codex-sub-exec.sh','codex','sub','other'),('codex-review-agent-exec.sh','codex','review','review'),('claude-impl-exec.sh','claude','impl','implementation'),('claude-sub-exec.sh','claude','sub','other'),('claude-review-agent-exec.sh','claude','review','review')]
     claude_agents={'implementation':'impl','other':'sub','review':'review'}
     claude_models={'implementation':'claude-impl-test','other':'claude-other-test','review':'claude-review-test'}
     count=0
@@ -70,9 +70,22 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
                 assert ('DELEGATE_FALLBACK_SUGGEST' in result.stderr)==(rc!=0),result.stderr
                 assert not list(root.glob('tmp.*')),list(root.glob('tmp.*'))
                 count+=1
+    selected_backends={'implementation':'codex','other':'claude','review':'codex'}
+    routing.write_text('implementation\tcodex\t\tgpt-5.6-sol\nother\tclaude\tsub\tclaude-other-test\nreview\tcodex\t\tgpt-5.6-sol\n')
+    for entry,required_backend,role,task_type in entrypoints:
+        calls_before=(logs/'calls').read_text().splitlines()
+        result=subprocess.run(['bash',str(scripts/entry),str(work),'task.md',str(inputs)],env=dict(env,TEST_RC='0'),capture_output=True,text=True)
+        if required_backend==selected_backends[task_type]:
+            assert result.returncode==0,(entry,result)
+            call=json.loads((logs/'calls').read_text().splitlines()[-1])
+            assert call['cli']==required_backend,(entry,call)
+        else:
+            assert result.returncode==1 and f'requires backend {required_backend}' in result.stderr,(entry,result)
+            assert (logs/'calls').read_text().splitlines()==calls_before,(entry,result)
+        count+=1
     routing.write_text('implementation\tcodex\t\tgpt-5.6-sol\n')
     markers_before=set(marker_dir.glob('delegate-test-*.delegate'))
-    result=subprocess.run(['bash',str(scripts/'codex-exec.sh'),str(work),'task.md',str(inputs)],env=dict(env,DELEGATE_SKIP_EXEC='1'),capture_output=True,text=True)
+    result=subprocess.run(['bash',str(scripts/'codex-impl-exec.sh'),str(work),'task.md',str(inputs)],env=dict(env,DELEGATE_SKIP_EXEC='1'),capture_output=True,text=True)
     assert result.returncode==0 and set(marker_dir.glob('delegate-test-*.delegate'))==markers_before,result
     count+=1
     for entry,task_type,agent,expected_agent in [('claude-impl-exec.sh','implementation','sub','impl'),('claude-sub-exec.sh','other','impl','sub'),('claude-review-agent-exec.sh','review','impl','review')]:
@@ -85,7 +98,7 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
     routing.write_text('implementation\tcodex\t\tgpt-5.6-sol\n')
     (home/'impl.config.toml').unlink()
     before=(logs/'calls').read_text()
-    result=subprocess.run(['bash',str(scripts/'codex-exec.sh'),str(work),'task.md',str(inputs)],env=env,capture_output=True,text=True)
+    result=subprocess.run(['bash',str(scripts/'codex-impl-exec.sh'),str(work),'task.md',str(inputs)],env=env,capture_output=True,text=True)
     assert result.returncode==1 and 'Codex profile not found' in result.stderr,result
     assert (logs/'calls').read_text()==before
     count+=1
@@ -101,4 +114,4 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
     call=json.loads((logs/'calls').read_text().splitlines()[-1]); generated=Path(call['args'][-1].split(' を読んで対応してください。',1)[0])
     generated_text=generated.read_text(); assert str(work/'result.txt') in generated_text and 'range: HEAD~1..HEAD' in generated_text,generated_text
     count+=1
-    print(f'PASS: {count} cases (backend-specific entrypoints, mismatches fail-closed, exit 0/7, role/profile/sandbox/model, cleanup, review handoff, invalid Claude agent and missing profile)')
+    print(f'PASS: {count} cases (backend-specific entrypoints, mismatches and mixed routing fail-closed, exit 0/7, role/profile/sandbox/model, cleanup, review handoff, invalid Claude agent and missing profile)')

@@ -8,7 +8,6 @@
 !claude-review-agent-exec.sh
 !claude-review-exec.sh
 !claude-review-files-exec.sh
-!codex-exec.sh
 !codex-impl-exec.sh
 !codex-sub-exec.sh
 !codex-review-exec.sh
