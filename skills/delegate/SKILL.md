@@ -43,6 +43,8 @@ git 管理下の実装を委譲する場合、委譲先に依頼するのは **�
 - その他（調査/現状把握/設計/トレードオフ比較）: other 行の backend で決める（`codex` → `scripts/codex-sub-exec.sh` / `claude` → `scripts/claude-sub-exec.sh`）。
 - レビュー: review 行の backend で決める。Codex は diff 範囲指定を `scripts/codex-review-exec.sh`、ファイル指定を同スクリプトの `--files` 形式で行う。Claude は diff 範囲指定を `scripts/claude-review-exec.sh`、ファイル指定を `scripts/claude-review-files-exec.sh` で行う。
 
+旧 `scripts/codex-exec.sh` は `scripts/codex-impl-exec.sh` へ引数と終了コードをそのまま渡す互換入口としてのみ残す。新規の呼び出しには `scripts/codex-impl-exec.sh` を使う。
+
 委譲前に必ず `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` を読み、記憶や既定の思い込みでスクリプトを選ばない。各入口は名前と同じ backend だけを起動し、routing 行が異なる backend を指定していた場合は CLI 起動前に拒否する。
 
 各エージェント用スクリプトは `delegate-common.sh` で routing.tsv を読み、Codex では impl / sub / review profile、Claude では指定 agent へ振り分ける。

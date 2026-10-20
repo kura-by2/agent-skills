@@ -26,7 +26,7 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
         p=binary/cli; p.write_text(shim); p.chmod(0o755)
     env=dict(os.environ,PATH=str(binary)+':'+os.environ['PATH'], CODEX_HOME=str(home), DELEGATE_ROUTING_FILE=str(routing),DELEGATE_MODEL_CACHE_DIR=str(cache),DELEGATE_MODEL_TIERS_FILE=str(tiers),TEST_LOG=str(logs/'calls'),TEST_WORK=str(work),TMPDIR=str(root))
     env.pop('CLAUDE_CODE_SESSION_ID',None); env.pop('CODEX_THREAD_ID',None)
-    entrypoints=[('codex-impl-exec.sh','codex','impl','implementation'),('codex-sub-exec.sh','codex','sub','other'),('codex-review-agent-exec.sh','codex','review','review'),('claude-impl-exec.sh','claude','impl','implementation'),('claude-sub-exec.sh','claude','sub','other'),('claude-review-agent-exec.sh','claude','review','review')]
+    entrypoints=[('codex-impl-exec.sh','codex','impl','implementation'),('codex-exec.sh','codex','impl','implementation'),('codex-sub-exec.sh','codex','sub','other'),('codex-review-agent-exec.sh','codex','review','review'),('claude-impl-exec.sh','claude','impl','implementation'),('claude-sub-exec.sh','claude','sub','other'),('claude-review-agent-exec.sh','claude','review','review')]
     claude_agents={'implementation':'impl','other':'sub','review':'review'}
     claude_models={'implementation':'claude-impl-test','other':'claude-other-test','review':'claude-review-test'}
     count=0
@@ -70,6 +70,7 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
                 assert ('DELEGATE_FALLBACK_SUGGEST' in result.stderr)==(rc!=0),result.stderr
                 assert not list(root.glob('tmp.*')),list(root.glob('tmp.*'))
                 count+=1
+    routing.write_text('implementation\tcodex\t\tgpt-5.6-sol\n')
     markers_before=set(marker_dir.glob('delegate-test-*.delegate'))
     result=subprocess.run(['bash',str(scripts/'codex-exec.sh'),str(work),'task.md',str(inputs)],env=dict(env,DELEGATE_SKIP_EXEC='1'),capture_output=True,text=True)
     assert result.returncode==0 and set(marker_dir.glob('delegate-test-*.delegate'))==markers_before,result
