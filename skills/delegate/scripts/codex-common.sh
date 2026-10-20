@@ -17,13 +17,14 @@ delegate_codex_exec() (
     return 1
   fi
 
-  local CODEX_CONFIG_HOME="${CODEX_HOME:-${HOME}/.codex}"
+  local CODEX_CONFIG_HOME
+  CODEX_CONFIG_HOME="$(delegate_codex_home)" || return 1
   if [ ! -f "$CODEX_CONFIG_HOME/$PROFILE.config.toml" ]; then
-    printf 'error: Codex profile not found: %s/%s.config.toml (set CODEX_HOME to the configured Codex home)\n' "$CODEX_CONFIG_HOME" "$PROFILE" >&2
+    printf 'error: Codex profile not found: %s/%s.config.toml\n' "$CODEX_CONFIG_HOME" "$PROFILE" >&2
     return 1
   fi
 
-  delegate_ensure_model_cache codex || return $?
+  CODEX_HOME="$CODEX_CONFIG_HOME" delegate_ensure_model_cache codex || return $?
 
   local TASK_PATH="$TASK"
   if [ -n "$INPUTS_DIR" ]; then
@@ -79,7 +80,7 @@ delegate_codex_exec() (
   local PERMISSION_ARGS=(--approve-for-me)
   case "$PROFILE" in sub|review) PERMISSION_ARGS=(--sandbox read-only) ;; esac
 
-  if codex exec --profile "$PROFILE" --dangerously-bypass-hook-trust -C "$WORKTREE" \
+  if CODEX_HOME="$CODEX_CONFIG_HOME" codex exec --profile "$PROFILE" --dangerously-bypass-hook-trust -C "$WORKTREE" \
     --model "$MODEL" \
     "${ADD_DIR_ARGS[@]}" \
     "${PERMISSION_ARGS[@]}" \

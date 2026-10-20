@@ -51,7 +51,7 @@ claude の各エージェント用スクリプトは薄いラッパで、共通�
 
 どの backend を使うかは `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` が唯一の情報源。backend の切り替え（codex のクォータ切れ・障害による退避など）は `$AGENT_PROJECT_DIR/state/delegate/routing.tsv` の書き換えで表現し、このドキュメントに既定を書かない。claude の `impl` エージェントは書き込みとコミットを許可し、検証コマンド（テスト・lint・ビルド・アプリ起動）の実行を禁止する。
 
-Codex は標準の `CODEX_HOME`（未指定時は `~/.codex`）を使い、impl / sub / review の `<name>.config.toml` が必要。呼び出し元が通常起動と同じ `CODEX_HOME` を渡す。profile 不足時は起動せずエラーにする。impl は標準の `--approve-for-me` で workspace-write と on-request、自動レビューを組み合わせ、sub / review は read-only sandbox をCLIでも指定して自動承認を有効にしない。Codex は `codex exec --profile <role> -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude はエージェント別スクリプト（`claude-sub-exec.sh` / `claude-impl-exec.sh` / `claude-review-agent-exec.sh`）が共通部 `claude-common.sh` 経由で `claude -p --agent <agent> --model <model>` を起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
+Codex は解決したプロジェクトルートの `.codex` を `CODEX_HOME` としてコマンド実行時に明示し、impl / sub / review の `<name>.config.toml` が必要。呼び出し元の `CODEX_HOME` や `HOME/.codex` は継承しない。profile 不足時は起動せずエラーにする。impl は標準の `--approve-for-me` で workspace-write と on-request、自動レビューを組み合わせ、sub / review は read-only sandbox をCLIでも指定して自動承認を有効にしない。Codex は `codex exec --profile <role> -C <work_dir>` で起動し、追加の inputs/context ディレクトリだけを `--add-dir` する。claude はエージェント別スクリプト（`claude-sub-exec.sh` / `claude-impl-exec.sh` / `claude-review-agent-exec.sh`）が共通部 `claude-common.sh` 経由で `claude -p --agent <agent> --model <model>` を起動し、作業場所 / inputs / context ディレクトリを `--add-dir` する。claude 版は cwd を変えないため、プロンプトで作業対象ディレクトリと `git -C <work_dir>` の使用を明示する。
 
 委譲 CLI が非0終了し、出力に `DELEGATE_PERMISSION_OUT_OF_SCOPE` が含まれない場合、実行スクリプトは stderr に `DELEGATE_FALLBACK_SUGGEST<TAB>failed=<model><TAB>next=<model><TAB>reason=exec_failed` を1行だけ出す。これは提案のみであり、自動リトライ・自動モデル切替・`$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv` の書き換えはしないため、「同じ指示での自動リトライはしない」規約と矛盾しない。
 
@@ -61,7 +61,7 @@ Codex は標準の `CODEX_HOME`（未指定時は `~/.codex`）を使い、impl 
 
 モデル確認用キャッシュは、各 backend の正規な一覧取得元に現在のモデルが存在するか、退役済みでないかを判定するための生成物である。`$AGENT_PROJECT_DIR/state/delegate/.model-cache/<backend>-models.json` に週次保存し、git 追跡しない。実行スクリプトの冒頭でキャッシュの mtime の ISO 週が今週ならそのまま使い、キャッシュ不在または週が変わった場合だけ再取得する。退役日時が未来のモデルは利用可能なまま退役情報を可視化し、退役日時を過ぎたモデルは利用可能と扱わない。
 
-codex は `codex debug models` を使って、表示名、優先度、説明、対応する推論レベル、退役情報を含む一覧を再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、本文をそのまま保存する。
+codex は同じプロジェクトルートの `.codex` を `CODEX_HOME` として明示した `codex debug models` を使って、表示名、優先度、説明、対応する推論レベル、退役情報を含む一覧を再取得する。claude は CLI にモデル一覧取得コマンドが無いため、認証不要の Anthropic 公式 docs 公開 Markdown（`https://platform.claude.com/docs/en/about-claude/models/overview.md`）を取得し、本文をそのまま保存する。
 
 `delegate_report_model_tier_guidance` は対象 backend のキャッシュから、モデルの判断材料と `$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv` に対する未分類・退役候補・順序の矛盾を標準出力へ整形する。backend を指定しなければ両方を対象にする。claude の Markdown から構造的に取得できない項目は、その旨を表示する。この出力を読んで性能序列を判断し、必要なときに `$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv` を更新するのは委譲元のエージェントである。スクリプトは性能を決めず、`$AGENT_PROJECT_DIR/state/delegate/model-tiers.tsv` を書き換えない。
 

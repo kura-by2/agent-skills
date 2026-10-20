@@ -8,7 +8,7 @@ def cleanup_markers():
         marker.unlink(missing_ok=True)
 atexit.register(cleanup_markers)
 with tempfile.TemporaryDirectory(prefix='delegate-check-') as tmp:
-    root=Path(tmp); binary=root/'bin'; binary.mkdir(); home=root/'codex-home'; home.mkdir()
+    root=Path(tmp); binary=root/'bin'; binary.mkdir(); home=root/'.codex'; home.mkdir()
     cache=root/'cache'; cache.mkdir(); logs=root/'logs'; logs.mkdir(); inputs=root/'inputs'; inputs.mkdir()
     work=root/'work'; work.mkdir(); (inputs/'task.md').write_text('Read only for sub/review. Implementation fixture.\n'); (inputs/'goal.md').write_text('Review goal.\n'); (work/'result.txt').write_text('result\n')
     for role in ['impl','sub','review']: (home/f'{role}.config.toml').write_text('')
@@ -18,13 +18,14 @@ with tempfile.TemporaryDirectory(prefix='delegate-check-') as tmp:
     shim='''#!/usr/bin/env python3
 import json,os,sys
 from pathlib import Path
-with open(os.environ['TEST_LOG'],'a') as f: f.write(json.dumps({'cli':Path(sys.argv[0]).name,'args':sys.argv[1:]})+'\\n')
+with open(os.environ['TEST_LOG'],'a') as f: f.write(json.dumps({'cli':Path(sys.argv[0]).name,'args':sys.argv[1:],'codex_home':os.environ.get('CODEX_HOME')})+'\\n')
 print('DELEGATE_CHANGED_FILE\\t'+os.environ['TEST_WORK']+'/result.txt')
 sys.exit(int(os.environ.get('TEST_RC','0')))
 '''
     for cli in ['codex','claude']:
         p=binary/cli; p.write_text(shim); p.chmod(0o755)
-    env=dict(os.environ,PATH=str(binary)+':'+os.environ['PATH'], CODEX_HOME=str(home), DELEGATE_ROUTING_FILE=str(routing),DELEGATE_MODEL_CACHE_DIR=str(cache),DELEGATE_MODEL_TIERS_FILE=str(tiers),TEST_LOG=str(logs/'calls'),TEST_WORK=str(work),TMPDIR=str(root))
+    env=dict(os.environ,PATH=str(binary)+':'+os.environ['PATH'], AGENT_PROJECT_DIR=str(root), DELEGATE_ROUTING_FILE=str(routing),DELEGATE_MODEL_CACHE_DIR=str(cache),DELEGATE_MODEL_TIERS_FILE=str(tiers),TEST_LOG=str(logs/'calls'),TEST_WORK=str(work),TMPDIR=str(root))
+    env.pop('CODEX_HOME',None)
     env.pop('CLAUDE_CODE_SESSION_ID',None); env.pop('CODEX_THREAD_ID',None)
     entrypoints=[('codex-impl-exec.sh','codex','impl','implementation'),('codex-sub-exec.sh','codex','sub','other'),('codex-review-agent-exec.sh','codex','review','review'),('claude-impl-exec.sh','claude','impl','implementation'),('claude-sub-exec.sh','claude','sub','other'),('claude-review-agent-exec.sh','claude','review','review')]
     claude_agents={'implementation':'impl','other':'sub','review':'review'}
@@ -59,6 +60,7 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
                 call=json.loads((logs/'calls').read_text().splitlines()[-1]); assert call['cli']==backend,call
                 args=call['args']
                 if backend=='codex':
+                    assert call['codex_home']==str(home),call
                     assert args[args.index('--profile')+1]==role,call
                     assert args[args.index('--model')+1]=='gpt-5.6-sol',call
                     if role=='impl':
@@ -76,6 +78,7 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
                 assert not list(root.glob('tmp.*')),list(root.glob('tmp.*'))
                 count+=1
     selected_backends={'implementation':'codex','other':'claude','review':'codex'}
+    env['CODEX_HOME']=str(root/'wrong-codex-home')
     routing.write_text('implementation\tcodex\t\tgpt-5.6-sol\nother\tclaude\tsub\tclaude-other-test\nreview\tcodex\t\tgpt-5.6-sol\n')
     for entry,required_backend,role,task_type in entrypoints:
         calls_before=(logs/'calls').read_text().splitlines()
@@ -84,6 +87,7 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
             assert result.returncode==0,(entry,result)
             call=json.loads((logs/'calls').read_text().splitlines()[-1])
             assert call['cli']==required_backend,(entry,call)
+            if required_backend=='codex': assert call['codex_home']==str(home),(entry,call)
         else:
             assert result.returncode==1 and f'requires backend {required_backend}' in result.stderr,(entry,result)
             assert (logs/'calls').read_text().splitlines()==calls_before,(entry,result)

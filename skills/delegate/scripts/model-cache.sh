@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-delegate_model_cache_state_dir() {
+delegate_project_root() {
   local project_dir="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
 
   if [ -z "$project_dir" ]; then
@@ -11,6 +11,20 @@ delegate_model_cache_state_dir() {
     return 1
   fi
 
+  printf '%s\n' "$project_dir"
+}
+
+delegate_codex_home() {
+  local project_dir
+
+  project_dir="$(delegate_project_root)" || return 1
+  printf '%s/.codex\n' "$project_dir"
+}
+
+delegate_model_cache_state_dir() {
+  local project_dir
+
+  project_dir="$(delegate_project_root)" || return 1
   printf '%s/state/delegate\n' "$project_dir"
 }
 
@@ -35,13 +49,16 @@ delegate_refresh_codex_model_cache() {
   local tmp_file="${cache_file}.tmp"
   local raw_file="${cache_file}.raw"
   local cmd="${DELEGATE_CODEX_MODELS_CMD:-codex debug models}"
+  local codex_home
+
+  codex_home="$(delegate_codex_home)" || return 1
 
   if ! command -v jq >/dev/null 2>&1; then
     printf 'error: jq is required to normalize codex model cache\n' >&2
     return 1
   fi
 
-  if ! bash -c "$cmd" > "$raw_file"; then
+  if ! CODEX_HOME="$codex_home" bash -c "$cmd" > "$raw_file"; then
     rm -f "$raw_file" "$tmp_file"
     printf 'error: failed to refresh codex model cache with official CLI command: %s\n' "$cmd" >&2
     return 1
