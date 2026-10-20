@@ -76,13 +76,13 @@ delegate_codex_exec() (
   trap 'rm -f "$OUTPUT_FILE" "$STDOUT_FILE" "$STDERR_FILE"' EXIT
   local RC=0
 
-  local SANDBOX="workspace-write"
-  case "$PROFILE" in sub|review) SANDBOX="read-only" ;; esac
+  local PERMISSION_ARGS=(--approve-for-me)
+  case "$PROFILE" in sub|review) PERMISSION_ARGS=(--sandbox read-only) ;; esac
 
   if codex exec --profile "$PROFILE" --dangerously-bypass-hook-trust -C "$WORKTREE" \
     --model "$MODEL" \
     "${ADD_DIR_ARGS[@]}" \
-    --sandbox "$SANDBOX" \
+    "${PERMISSION_ARGS[@]}" \
     "${TASK_PATH} を読んで対応してください。${ROLE_PROMPT}${CONTEXT_PROMPT}" \
     > "$STDOUT_FILE" 2> "$STDERR_FILE" < /dev/null; then
     :

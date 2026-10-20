@@ -61,7 +61,12 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
                 if backend=='codex':
                     assert args[args.index('--profile')+1]==role,call
                     assert args[args.index('--model')+1]=='gpt-5.6-sol',call
-                    assert args[args.index('--sandbox')+1]==('read-only' if role in ['sub','review'] else 'workspace-write'),call
+                    if role=='impl':
+                        assert '--approve-for-me' in args,call
+                        assert '--sandbox' not in args,call
+                    else:
+                        assert '--approve-for-me' not in args,call
+                        assert args[args.index('--sandbox')+1]=='read-only',call
                     assert '--dangerously-bypass-approvals-and-sandbox' not in args,call
                 else:
                     assert args[args.index('--agent')+1]==claude_agents[task_type],call
@@ -114,4 +119,4 @@ sys.exit(int(os.environ.get('TEST_RC','0')))
     call=json.loads((logs/'calls').read_text().splitlines()[-1]); generated=Path(call['args'][-1].split(' を読んで対応してください。',1)[0])
     generated_text=generated.read_text(); assert str(work/'result.txt') in generated_text and 'range: HEAD~1..HEAD' in generated_text,generated_text
     count+=1
-    print(f'PASS: {count} cases (backend-specific entrypoints, mismatches and mixed routing fail-closed, exit 0/7, role/profile/sandbox/model, cleanup, review handoff, invalid Claude agent and missing profile)')
+    print(f'PASS: {count} cases (backend-specific entrypoints, mismatches and mixed routing fail-closed, exit 0/7, role/profile/approval/sandbox/model, cleanup, review handoff, invalid Claude agent and missing profile)')
