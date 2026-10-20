@@ -12,4 +12,4 @@ if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
   exit 1
 fi
 
-delegate_exec_for_task_type review review "$@"
+delegate_exec_for_backend review claude review "$@"

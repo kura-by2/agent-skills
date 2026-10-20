@@ -11,4 +11,4 @@ if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
   exit 1
 fi
 
-delegate_exec_for_task_type other sub "$@"
+delegate_exec_for_backend other claude sub "$@"
