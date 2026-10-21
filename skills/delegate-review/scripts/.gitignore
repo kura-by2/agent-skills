@@ -1,0 +1,8 @@
+*
+!.gitignore
+!lib.sh
+!claude-review-exec.sh
+!claude-review-files-exec.sh
+!write-input.sh
+!fallback/
+!fallback/.keep

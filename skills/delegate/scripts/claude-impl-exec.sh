@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/claude-common.sh"
+source "$SCRIPT_DIR/delegate-common.sh"
 
 if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
   echo "Usage: claude-impl-exec.sh <worktree> <task_file> [inputs_dir] [selected_context_file]"
@@ -17,7 +17,7 @@ WORKTREE="$1"
 STDOUT_FILE="$(mktemp)"
 trap 'rm -f "$STDOUT_FILE"' EXIT
 RC=0
-delegate_claude_exec impl "$@" > "$STDOUT_FILE" || RC=$?
+delegate_exec_for_backend implementation claude impl "$@" > "$STDOUT_FILE" || RC=$?
 cat "$STDOUT_FILE"
 
 REVIEW_FILES="$(awk -F '\t' '$1 == "DELEGATE_CHANGED_FILE" && $2 ~ /^\// && NF == 2 { print $2 }' "$STDOUT_FILE" | sort -u)"

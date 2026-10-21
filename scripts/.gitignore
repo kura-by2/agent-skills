@@ -1,0 +1,7 @@
+*
+!.gitignore
+!file-fresh.sh
+!jev-choice.sh
+!project-root.sh
+!llm-models/
+!summarize/

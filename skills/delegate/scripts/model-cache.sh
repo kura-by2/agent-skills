@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-delegate_model_cache_state_dir() {
+delegate_project_root() {
   local project_dir="${AGENT_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
 
   if [ -z "$project_dir" ]; then
@@ -11,6 +11,20 @@ delegate_model_cache_state_dir() {
     return 1
   fi
 
+  printf '%s\n' "$project_dir"
+}
+
+delegate_codex_home() {
+  local project_dir
+
+  project_dir="$(delegate_project_root)" || return 1
+  printf '%s/.codex\n' "$project_dir"
+}
+
+delegate_model_cache_state_dir() {
+  local project_dir
+
+  project_dir="$(delegate_project_root)" || return 1
   printf '%s/state/delegate\n' "$project_dir"
 }
 
@@ -35,13 +49,16 @@ delegate_refresh_codex_model_cache() {
   local tmp_file="${cache_file}.tmp"
   local raw_file="${cache_file}.raw"
   local cmd="${DELEGATE_CODEX_MODELS_CMD:-codex debug models}"
+  local codex_home
+
+  codex_home="$(delegate_codex_home)" || return 1
 
   if ! command -v jq >/dev/null 2>&1; then
     printf 'error: jq is required to normalize codex model cache\n' >&2
     return 1
   fi
 
-  if ! bash -c "$cmd" > "$raw_file"; then
+  if ! CODEX_HOME="$codex_home" bash -c "$cmd" > "$raw_file"; then
     rm -f "$raw_file" "$tmp_file"
     printf 'error: failed to refresh codex model cache with official CLI command: %s\n' "$cmd" >&2
     return 1
@@ -178,6 +195,71 @@ delegate_model_for_route() {
   done < "$routing_file"
 
   printf 'error: no delegate routing row for %s %s\n' "$match_field" "$match_value" >&2
+  return 1
+}
+
+delegate_route_for_task_type() {
+  local requested_task_type="$1"
+  local routing_file task_type backend agent model line expected_agent
+
+  routing_file="$(delegate_routing_file)"
+
+  if [ ! -f "$routing_file" ]; then
+    printf 'error: delegate routing table is missing: %s\n' "$routing_file" >&2
+    return 1
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    IFS=$'\037' read -r task_type backend agent model _ <<< "${line//$'\t'/$'\037'}"
+    [ -n "$task_type" ] || continue
+    case "$task_type" in
+      \#*)
+        continue
+        ;;
+    esac
+    [ "$task_type" = "$requested_task_type" ] || continue
+
+    if [ -z "$backend" ] || [ -z "$model" ]; then
+      printf 'error: delegate routing row is incomplete for task_type %s\n' "$requested_task_type" >&2
+      return 1
+    fi
+    case "$backend" in
+      codex)
+        if [ -n "$agent" ]; then
+          printf 'error: codex delegate routing row must not specify an agent for task_type %s\n' "$requested_task_type" >&2
+          return 1
+        fi
+        ;;
+      claude)
+        if [ -z "$agent" ]; then
+          printf 'error: claude delegate routing row must specify an agent for task_type %s\n' "$requested_task_type" >&2
+          return 1
+        fi
+        case "$requested_task_type" in
+          implementation) expected_agent="impl" ;;
+          other) expected_agent="sub" ;;
+          review) expected_agent="review" ;;
+          *)
+            printf 'error: unsupported delegate task_type for claude backend: %s\n' "$requested_task_type" >&2
+            return 1
+            ;;
+        esac
+        if [ "$agent" != "$expected_agent" ]; then
+          printf 'error: claude delegate routing row for task_type %s must specify agent %s\n' "$requested_task_type" "$expected_agent" >&2
+          return 1
+        fi
+        ;;
+      *)
+        printf 'error: unsupported delegate backend for task_type %s: %s\n' "$requested_task_type" "$backend" >&2
+        return 1
+        ;;
+    esac
+
+    printf '%s\t%s\t%s\n' "$backend" "$agent" "$model"
+    return 0
+  done < "$routing_file"
+
+  printf 'error: no delegate routing row for task_type %s\n' "$requested_task_type" >&2
   return 1
 }
 

@@ -1,6 +1,9 @@
 *
 !.gitignore
 !delegate
+!delegate-impl
+!delegate-review
+!delegate-sub
 !gh
 !git
 !memorizer
